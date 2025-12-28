@@ -179,3 +179,50 @@ export async function searchInProject(
 export async function fileExists(path: string): Promise<boolean> {
   return invoke<boolean>("file_exists", { path });
 }
+
+// LSP operations
+export interface CompletionResult {
+  label: string;
+  kind: string;
+  detail: string | null;
+  insert_text: string | null;
+  additional_text_edits: TextEdit[] | null;
+}
+
+export interface TextEdit {
+  start_line: number;
+  start_col: number;
+  end_line: number;
+  end_col: number;
+  new_text: string;
+}
+
+export async function lspStart(language: string, workspaceRoot: string): Promise<void> {
+  return invoke("lsp_start", { language, workspaceRoot });
+}
+
+export async function lspStop(): Promise<void> {
+  return invoke("lsp_stop");
+}
+
+export async function lspOpenFile(language: string, path: string, content: string): Promise<void> {
+  return invoke("lsp_open_file", { language, path, content });
+}
+
+export async function lspUpdateFile(language: string, path: string, content: string): Promise<void> {
+  return invoke("lsp_update_file", { language, path, content });
+}
+
+export async function lspGetCompletions(
+  language: string,
+  path: string,
+  line: number,
+  column: number
+): Promise<CompletionResult[]> {
+  return invoke<CompletionResult[]>("lsp_get_completions", { language, path, line, column });
+}
+
+// Emmet expansion
+export async function emmetExpand(abbreviation: string, language: string): Promise<string> {
+  return invoke<string>("emmet_expand", { abbreviation, language });
+}

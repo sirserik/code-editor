@@ -103,6 +103,7 @@ export interface EditorSetupOptions {
   onChange?: (content: string) => void;
   onCursorChange?: (line: number, column: number) => void;
   onDirty?: () => void;  // Called immediately when content changes (for dirty flag)
+  completionSource?: any;  // Custom completion source for LSP
 }
 
 export function createEditorState(
@@ -130,7 +131,11 @@ export function createEditorState(
     indentOnInput(),
     bracketMatching(),
     closeBrackets(),
-    autocompletion(),
+    autocompletion({
+      override: options.completionSource ? [options.completionSource] : undefined,
+      activateOnTyping: true,
+      maxRenderedOptions: 50,
+    }),
     rectangularSelection(),
     crosshairCursor(),
     highlightActiveLine(),

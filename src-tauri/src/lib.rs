@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{file, git, settings};
+use commands::{file, git, settings, lsp};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -33,6 +33,13 @@ pub fn run() {
             settings::zoom_out,
             settings::reset_zoom,
             settings::set_theme,
+            // LSP commands
+            lsp::lsp_start,
+            lsp::lsp_stop,
+            lsp::lsp_open_file,
+            lsp::lsp_update_file,
+            lsp::lsp_get_completions,
+            lsp::emmet_expand,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

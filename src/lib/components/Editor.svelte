@@ -4,9 +4,10 @@
   import { StateField, StateEffect } from "@codemirror/state";
   import { createEditorState, fontSizeCompartment, createFontSizeExtension } from "$lib/codemirror/setup";
   import { settingsStore } from "$lib/stores/settings";
-  import { filesStore, searchHighlightStore } from "$lib/stores/files";
+  import { filesStore, searchHighlightStore, projectRootStore } from "$lib/stores/files";
   import type { OpenFile } from "$lib/stores/files";
   import { writeFile, messageDialog } from "$lib/utils/ipc";
+  import { ensureLspStarted, notifyFileOpen, debouncedNotifyFileChange, createLspCompletionSource } from "$lib/codemirror/lsp-completion";
 
   interface Props {
     file: OpenFile;
@@ -70,7 +71,16 @@
 
   function handleDirty() {
     filesStore.markDirty(file.path);
+    // Notify LSP about file change
+    debouncedNotifyFileChange(file.language, file.path, view?.state.doc.toString() || file.content);
   }
+
+  // Create LSP completion source
+  const lspCompletionSource = createLspCompletionSource(() => ({
+    path: file.path,
+    language: file.language,
+    content: view?.state.doc.toString() || file.content,
+  }));
 
   async function handleSave() {
     try {
@@ -102,13 +112,21 @@
     });
   }
 
-  onMount(() => {
+  onMount(async () => {
+    // Start LSP server if available
+    const workspaceRoot = $projectRootStore;
+    if (workspaceRoot) {
+      await ensureLspStarted(file.language, workspaceRoot);
+      await notifyFileOpen(file.language, file.path, file.content);
+    }
+
     const state = createEditorState(file.content, {
       language: file.language,
       settings: $settingsStore,
       onChange: handleChange,
       onCursorChange: handleCursorChange,
       onDirty: handleDirty,
+      completionSource: lspCompletionSource,
     });
 
     // Add highlight field extension
@@ -219,11 +237,19 @@
     overflow: auto;
   }
 
-  .editor-wrapper :global(.cm-search-highlight) {
-    background-color: #fbbf24 !important;
-    color: #000 !important;
+  /* Dark theme search highlight */
+  :global([data-theme="dark"]) .editor-wrapper :global(.cm-search-highlight) {
+    background-color: rgba(187, 154, 247, 0.4) !important;
     border-radius: 2px;
     padding: 1px 0;
-    box-shadow: 0 0 0 1px rgba(251, 191, 36, 0.5);
+    box-shadow: 0 0 0 1px rgba(187, 154, 247, 0.6);
+  }
+
+  /* Light theme search highlight */
+  :global([data-theme="light"]) .editor-wrapper :global(.cm-search-highlight) {
+    background-color: rgba(152, 84, 241, 0.3) !important;
+    border-radius: 2px;
+    padding: 1px 0;
+    box-shadow: 0 0 0 1px rgba(152, 84, 241, 0.5);
   }
 </style>
