@@ -47,6 +47,36 @@
 - **Command Palette** - `Cmd+Shift+P` for quick commands
 - **Status Bar** - File info, cursor position, language mode, zoom controls
 
+## System Requirements
+
+### Supported Operating Systems
+
+| OS | Version | Architecture |
+|----|---------|--------------|
+| **macOS** | 10.15+ (Catalina) | Intel (x86_64), Apple Silicon (M1/M2/M3/M4) |
+| **Windows** | 10/11 | x86_64, ARM64 |
+| **Linux** | Ubuntu 20.04+, Fedora 36+, Arch | x86_64, ARM64 |
+
+### Processor Support
+
+| Platform | Intel/AMD | Apple Silicon | ARM |
+|----------|-----------|---------------|-----|
+| macOS | x86_64 | M1, M2, M3, M4 (native) | - |
+| Windows | x86_64 | - | ARM64 (via emulation) |
+| Linux | x86_64 | - | aarch64 |
+
+### Minimum Requirements
+
+- **RAM**: 512 MB
+- **Disk Space**: ~100 MB
+- **Display**: 1280x720 or higher
+
+### Notes
+
+- **Apple Silicon**: The app runs natively on M-series chips (M1, M2, M3, M4) without Rosetta 2 emulation, providing optimal performance and battery efficiency.
+- **Windows ARM**: Runs via x86_64 emulation on Windows ARM devices (like Surface Pro X).
+- **Linux**: Requires WebKit2GTK (usually pre-installed on most distributions).
+
 ## Installation
 
 ### Download
@@ -79,6 +109,25 @@ npm run tauri build
 ```
 
 The built app will be in `src-tauri/target/release/bundle/`.
+
+#### Cross-compilation
+
+```bash
+# Build for Apple Silicon (on Intel Mac)
+npm run tauri build -- --target aarch64-apple-darwin
+
+# Build for Intel (on Apple Silicon Mac)
+npm run tauri build -- --target x86_64-apple-darwin
+
+# Build Universal Binary (both architectures)
+npm run tauri build -- --target universal-apple-darwin
+```
+
+**Note**: Cross-compilation requires the appropriate Rust targets installed:
+```bash
+rustup target add aarch64-apple-darwin
+rustup target add x86_64-apple-darwin
+```
 
 ## Keyboard Shortcuts
 

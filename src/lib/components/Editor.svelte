@@ -2,11 +2,11 @@
   import { onMount, onDestroy } from "svelte";
   import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
   import { StateField, StateEffect } from "@codemirror/state";
-  import { createEditorState, fontSizeCompartment, createFontSizeExtension } from "$lib/codemirror/setup";
+  import { createEditorState, fontSizeCompartment, createFontSizeExtension, loadLanguageAsync, updateTheme } from "$lib/codemirror/setup";
   import { settingsStore } from "$lib/stores/settings";
   import { filesStore, searchHighlightStore, projectRootStore } from "$lib/stores/files";
   import type { OpenFile } from "$lib/stores/files";
-  import { writeFile, messageDialog } from "$lib/utils/ipc";
+  import { writeFile, messageDialog, readFileChunk, readFile } from "$lib/utils/ipc";
   import { ensureLspStarted, notifyFileOpen, debouncedNotifyFileChange, createLspCompletionSource, createEmmetTabExpansion } from "$lib/codemirror/lsp-completion";
 
   interface Props {
@@ -143,6 +143,9 @@
       parent: editorContainer,
     });
 
+    // Load language extension asynchronously (for lazy loading)
+    loadLanguageAsync(view, file.language);
+
     // Apply search highlight if there's one
     const currentHighlight = $searchHighlightStore;
     if (currentHighlight) {
@@ -222,15 +225,114 @@
       });
     }
   });
+
+  // React to theme changes (skip initial mount to avoid flash)
+  let initialTheme = $settingsStore.theme;
+  let lastTheme = initialTheme;
+
+  $effect(() => {
+    const theme = $settingsStore.theme;
+    if (view && theme !== lastTheme) {
+      updateTheme(view, theme);
+      lastTheme = theme;
+    }
+  });
+
+  // Large file handling
+  let isLoadingMore = $state(false);
+
+  async function loadMoreContent() {
+    if (!file.isPartial || isLoadingMore) return;
+
+    isLoadingMore = true;
+    try {
+      const startLine = (file.loadedLines || 0) + 1;
+      const chunk = await readFileChunk(file.path, startLine, 1000);
+
+      if (view && chunk.content) {
+        // Append content to editor
+        const currentContent = view.state.doc.toString();
+        view.dispatch({
+          changes: {
+            from: currentContent.length,
+            insert: "\n" + chunk.content,
+          },
+        });
+        filesStore.appendContent(file.path, chunk.content, chunk.end_line);
+      }
+    } catch (err) {
+      console.error("Failed to load more content:", err);
+    }
+    isLoadingMore = false;
+  }
+
+  async function loadEntireFile() {
+    if (!file.isPartial || isLoadingMore) return;
+
+    isLoadingMore = true;
+    try {
+      const content = await readFile(file.path);
+      if (view) {
+        view.dispatch({
+          changes: {
+            from: 0,
+            to: view.state.doc.length,
+            insert: content,
+          },
+        });
+        filesStore.appendContent(file.path, "", file.totalLines || 0);
+        filesStore.markFullyLoaded(file.path);
+      }
+    } catch (err) {
+      console.error("Failed to load entire file:", err);
+    }
+    isLoadingMore = false;
+  }
+
+  function formatSize(bytes: number): string {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+  }
 </script>
 
-<div class="editor-wrapper" bind:this={editorContainer}></div>
+<div class="editor-container">
+  <div class="editor-wrapper" bind:this={editorContainer}></div>
+
+  {#if file.isPartial}
+    <div class="large-file-banner">
+      <span class="warning-icon">⚠️</span>
+      <span class="message">
+        Large file ({formatSize(file.totalSize || 0)}) - showing {file.loadedLines?.toLocaleString()} of {file.totalLines?.toLocaleString()} lines
+      </span>
+      <button class="load-btn" onclick={loadMoreContent} disabled={isLoadingMore}>
+        {#if isLoadingMore}
+          Loading...
+        {:else}
+          Load 1000 more
+        {/if}
+      </button>
+      <button class="load-btn load-all" onclick={loadEntireFile} disabled={isLoadingMore}>
+        Load entire file
+      </button>
+    </div>
+  {/if}
+</div>
 
 <style>
-  .editor-wrapper {
+  .editor-container {
     height: 100%;
     width: 100%;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+
+  .editor-wrapper {
+    flex: 1;
+    width: 100%;
     overflow: hidden;
+    background: var(--bg-primary);
   }
 
   .editor-wrapper :global(.cm-editor) {
@@ -239,6 +341,48 @@
 
   .editor-wrapper :global(.cm-scroller) {
     overflow: auto;
+  }
+
+  .large-file-banner {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .warning-icon {
+    font-size: 16px;
+  }
+
+  .message {
+    flex: 1;
+  }
+
+  .load-btn {
+    padding: 6px 14px;
+    background: rgba(0, 0, 0, 0.2);
+    color: white;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+
+  .load-btn:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.3);
+  }
+
+  .load-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .load-btn.load-all {
+    background: rgba(0, 0, 0, 0.4);
   }
 
   /* Dark theme search highlight */

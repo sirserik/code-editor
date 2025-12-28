@@ -5,10 +5,12 @@
 
   interface Props {
     showTerminal: boolean;
+    showSidebar: boolean;
     onToggleTerminal: () => void;
+    onToggleSidebar: () => void;
   }
 
-  let { showTerminal, onToggleTerminal }: Props = $props();
+  let { showTerminal, showSidebar, onToggleTerminal, onToggleSidebar }: Props = $props();
 
   function toggleTheme() {
     settingsStore.update({
@@ -19,6 +21,14 @@
 
 <footer class="status-bar">
   <div class="left">
+    <!-- Sidebar toggle -->
+    <button class="status-item toggle-btn" class:active={showSidebar} onclick={onToggleSidebar} title="Toggle Sidebar (Cmd+B)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="9" y1="3" x2="9" y2="21"></line>
+      </svg>
+    </button>
+
     {#if $gitStore}
       <button class="status-item" title="Git Branch">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -179,6 +189,15 @@
   }
 
   .zoom-value:hover {
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .toggle-btn {
+    opacity: 0.7;
+  }
+
+  .toggle-btn.active {
+    opacity: 1;
     background: rgba(0, 0, 0, 0.15);
   }
 </style>

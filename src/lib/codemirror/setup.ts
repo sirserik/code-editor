@@ -4,7 +4,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab, copyLineDown, cop
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { foldGutter, indentOnInput, bracketMatching, foldKeymap, syntaxTree } from "@codemirror/language";
-import { getLanguageExtension } from "./languages";
+import { getLanguageExtension, getLanguageExtensionSync } from "./languages";
 import { getThemeExtension } from "./themes";
 import type { Settings } from "../stores/settings";
 
@@ -74,8 +74,35 @@ function goToMatchingBracket(view: EditorView): boolean {
   return false;
 }
 
-// Compartment for dynamic font size updates
+// Compartments for dynamic updates
 export const fontSizeCompartment = new Compartment();
+export const languageCompartment = new Compartment();
+export const themeCompartment = new Compartment();
+
+// Selection theme - ensures visible selection like JetBrains IDEs
+const selectionTheme = EditorView.theme({
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+    backgroundColor: "#214283 !important",
+  },
+  "& .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "#214283 !important",
+  },
+  "&.cm-focused .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "#214283 !important",
+  },
+}, { dark: true });
+
+const selectionThemeLight = EditorView.theme({
+  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+    backgroundColor: "#add6ff !important",
+  },
+  "& .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "#add6ff !important",
+  },
+  "&.cm-focused .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "#add6ff !important",
+  },
+}, { dark: false });
 
 export function createFontSizeExtension(fontSize: number, fontFamily: string) {
   return EditorView.theme({
@@ -160,11 +187,14 @@ export function createEditorState(
       indentWithTab,
     ]),
 
-    // Language
-    getLanguageExtension(options.language),
+    // Language (sync version for initial load, can be updated async later)
+    languageCompartment.of(getLanguageExtensionSync(options.language)),
 
-    // Theme
-    getThemeExtension(options.settings.theme),
+    // Theme (in compartment for dynamic switching)
+    themeCompartment.of([
+      getThemeExtension(options.settings.theme),
+      options.settings.theme === "dark" ? selectionTheme : selectionThemeLight,
+    ]),
 
     // Tab size
     EditorState.tabSize.of(options.settings.tabSize),
@@ -212,5 +242,23 @@ export function createEditorView(
   return new EditorView({
     state,
     parent,
+  });
+}
+
+// Load language extension asynchronously and apply to editor
+export async function loadLanguageAsync(view: EditorView, language: string): Promise<void> {
+  const ext = await getLanguageExtension(language);
+  view.dispatch({
+    effects: languageCompartment.reconfigure(ext),
+  });
+}
+
+// Update theme dynamically
+export function updateTheme(view: EditorView, theme: "dark" | "light"): void {
+  view.dispatch({
+    effects: themeCompartment.reconfigure([
+      getThemeExtension(theme),
+      theme === "dark" ? selectionTheme : selectionThemeLight,
+    ]),
   });
 }

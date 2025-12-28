@@ -3,19 +3,21 @@
   import Sidebar from "$lib/components/Sidebar.svelte";
   import Tabs from "$lib/components/Tabs.svelte";
   import Editor from "$lib/components/Editor.svelte";
-  import Terminal from "$lib/components/Terminal.svelte";
   import StatusBar from "$lib/components/StatusBar.svelte";
-  import CommandPalette from "$lib/components/CommandPalette.svelte";
-  import QuickOpen from "$lib/components/QuickOpen.svelte";
-  import GoToLine from "$lib/components/GoToLine.svelte";
-  import GlobalSearch from "$lib/components/GlobalSearch.svelte";
-  import NewFileDialog from "$lib/components/NewFileDialog.svelte";
   import CloseProjectDialog from "$lib/components/CloseProjectDialog.svelte";
+
+  // Lazy loaded components (heavy/rarely used)
+  const Terminal = () => import("$lib/components/Terminal.svelte");
+  const CommandPalette = () => import("$lib/components/CommandPalette.svelte");
+  const QuickOpen = () => import("$lib/components/QuickOpen.svelte");
+  const GoToLine = () => import("$lib/components/GoToLine.svelte");
+  const GlobalSearch = () => import("$lib/components/GlobalSearch.svelte");
+  const NewFileDialog = () => import("$lib/components/NewFileDialog.svelte");
   import { filesStore, activeFileStore, activeFilePathStore, fileTreeStore, projectRootStore, getLanguageFromPath } from "$lib/stores/files";
   import { settingsStore } from "$lib/stores/settings";
   import { setupKeybindings } from "$lib/utils/keybindings";
-  import { openFileDialog, openFolderDialog, readFile, listDirectory, writeFile, confirmDialog, createFile, messageDialog } from "$lib/utils/ipc";
-  import { onMount } from "svelte";
+  import { openFileDialog, openFolderDialog, readFile, listDirectory, writeFile, confirmDialog, createFile, messageDialog, lspWarmup, lspCleanupIdle } from "$lib/utils/ipc";
+  import { onMount, onDestroy } from "svelte";
 
   let showTerminal = $state(false);
   let showCommandPalette = $state(false);
@@ -55,11 +57,32 @@
         projectRootStore.set(folder);
         const tree = await listDirectory(folder);
         fileTreeStore.setTree(tree);
+
+        // Warm up LSP servers for common languages in the project
+        warmupLspServers(folder);
       }
     } catch (err) {
       console.error("Failed to open folder:", err);
     }
   }
+
+  // LSP warmup for common project languages
+  async function warmupLspServers(workspaceRoot: string) {
+    // Detect common languages in the project and warm up their LSP servers
+    const commonLanguages = ['typescript', 'javascript', 'rust', 'python', 'go'];
+    try {
+      const started = await lspWarmup(workspaceRoot, commonLanguages);
+      if (started.length > 0) {
+        console.log('LSP servers warmed up:', started);
+      }
+    } catch (err) {
+      // Silently fail - LSP is optional
+      console.debug('LSP warmup skipped:', err);
+    }
+  }
+
+  // Periodic cleanup of idle LSP servers
+  let lspCleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   function handleCloseTab() {
     const activePath = $activeFilePathStore;
@@ -210,6 +233,24 @@
 
     // Apply theme
     document.documentElement.dataset.theme = $settingsStore.theme;
+
+    // Periodic cleanup of idle LSP servers (every 5 minutes)
+    lspCleanupInterval = setInterval(async () => {
+      try {
+        const cleaned = await lspCleanupIdle();
+        if (cleaned > 0) {
+          console.log(`Cleaned up ${cleaned} idle LSP server(s)`);
+        }
+      } catch {
+        // Silently ignore cleanup errors
+      }
+    }, 5 * 60 * 1000);
+  });
+
+  onDestroy(() => {
+    if (lspCleanupInterval) {
+      clearInterval(lspCleanupInterval);
+    }
   });
 
   $effect(() => {
@@ -246,7 +287,9 @@
 
       <div class="editor-container">
         {#if showGlobalSearch}
-          <GlobalSearch onClose={() => showGlobalSearch = false} />
+          {#await GlobalSearch() then module}
+            <module.default onClose={() => showGlobalSearch = false} />
+          {/await}
         {:else if $activeFileStore}
           {#key $activeFileStore.path}
             <Editor file={$activeFileStore} />
@@ -288,27 +331,42 @@
       </div>
 
       {#if showTerminal}
-        <Terminal onClose={() => (showTerminal = false)} />
+        {#await Terminal() then module}
+          <module.default onClose={() => (showTerminal = false)} />
+        {/await}
       {/if}
     </div>
   </div>
 
-  <StatusBar {showTerminal} onToggleTerminal={() => (showTerminal = !showTerminal)} />
+  <StatusBar
+    {showTerminal}
+    {showSidebar}
+    onToggleTerminal={() => (showTerminal = !showTerminal)}
+    onToggleSidebar={() => (showSidebar = !showSidebar)}
+  />
 
   {#if showCommandPalette}
-    <CommandPalette onClose={() => (showCommandPalette = false)} />
+    {#await CommandPalette() then module}
+      <module.default onClose={() => (showCommandPalette = false)} />
+    {/await}
   {/if}
 
   {#if showQuickOpen}
-    <QuickOpen onClose={() => (showQuickOpen = false)} />
+    {#await QuickOpen() then module}
+      <module.default onClose={() => (showQuickOpen = false)} />
+    {/await}
   {/if}
 
   {#if showGoToLine}
-    <GoToLine onClose={() => (showGoToLine = false)} onGoTo={handleGoToLine} />
+    {#await GoToLine() then module}
+      <module.default onClose={() => (showGoToLine = false)} onGoTo={handleGoToLine} />
+    {/await}
   {/if}
 
   {#if showNewFileDialog}
-    <NewFileDialog onClose={() => { showNewFileDialog = false; refreshFileTree(); }} />
+    {#await NewFileDialog() then module}
+      <module.default onClose={() => { showNewFileDialog = false; refreshFileTree(); }} />
+    {/await}
   {/if}
 
   <CloseProjectDialog

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { projectRootStore, filesStore, activeFilePathStore, getLanguageFromPath, searchHighlightStore } from "$lib/stores/files";
-  import { searchInProject, readFile } from "$lib/utils/ipc";
+  import { searchStreamingStart, searchStreamingCancel, readFile, type StreamSearchResult, type SearchProgress, type SearchComplete } from "$lib/utils/ipc";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+  import { onMount } from "svelte";
   import FileIcon from "./FileIcon.svelte";
 
   interface Props {
@@ -9,55 +11,34 @@
 
   let { onClose }: Props = $props();
 
-  interface GroupedResult {
+  interface DisplayGroupedResult {
     path: string;
     fileName: string;
     directory: string;
-    matches: Array<{ line: number; content: string }>;
+    matches: Array<{ line: number; content: string; matchStart: number; matchEnd: number }>;
   }
 
   let query = $state("");
   let isSearching = $state(false);
-  let includePattern = $state("");
-  let excludePattern = $state("node_modules,dist,.git");
   let caseSensitive = $state(false);
-  let results = $state<Array<{ path: string; line: number; content: string }>>([]);
+  let groupedResults = $state<DisplayGroupedResult[]>([]);
   let expandedFiles = $state<Set<string>>(new Set());
   let searchInput: HTMLInputElement;
 
-  let groupedResults = $derived.by(() => {
-    const groups = new Map<string, GroupedResult>();
+  // Streaming state
+  let currentSearchId = $state<number | null>(null);
+  let filesSearched = $state(0);
+  let matchesFound = $state(0);
+  let currentFile = $state("");
+  let unlisteners: UnlistenFn[] = [];
 
-    for (const result of results) {
-      if (!groups.has(result.path)) {
-        const fileName = result.path.split("/").pop() || result.path;
-        const relativePath = getRelativePath(result.path);
-        const parts = relativePath.split("/");
-        const directory = parts.length > 1 ? parts.slice(0, -1).join("/") : "";
-
-        groups.set(result.path, {
-          path: result.path,
-          fileName,
-          directory,
-          matches: []
-        });
-      }
-      groups.get(result.path)!.matches.push({
-        line: result.line,
-        content: result.content
-      });
-    }
-
-    return Array.from(groups.values());
-  });
-
-  let totalMatches = $derived(results.length);
+  let totalMatches = $derived(groupedResults.reduce((acc, g) => acc + g.matches.length, 0));
   let totalFiles = $derived(groupedResults.length);
 
   $effect(() => {
-    // Auto-expand all on new results
-    if (results.length > 0) {
-      expandedFiles = new Set(results.map(r => r.path));
+    // Auto-expand all on new results (only first 10 files)
+    if (groupedResults.length > 0 && groupedResults.length <= 10) {
+      expandedFiles = new Set(groupedResults.map(r => r.path));
     }
   });
 
@@ -65,6 +46,21 @@
     // Focus input on mount
     searchInput?.focus();
   });
+
+  // Cleanup on unmount
+  onMount(() => {
+    return () => {
+      cleanupListeners();
+      if (currentSearchId !== null) {
+        searchStreamingCancel(currentSearchId).catch(() => {});
+      }
+    };
+  });
+
+  function cleanupListeners() {
+    unlisteners.forEach(unlisten => unlisten());
+    unlisteners = [];
+  }
 
   function getRelativePath(fullPath: string): string {
     if (!$projectRootStore) return fullPath;
@@ -81,21 +77,77 @@
       return;
     }
 
+    // Cancel previous search if running
+    if (currentSearchId !== null) {
+      await searchStreamingCancel(currentSearchId).catch(() => {});
+      cleanupListeners();
+    }
+
     isSearching = true;
     errorMessage = "";
+    groupedResults = [];
+    filesSearched = 0;
+    matchesFound = 0;
+    currentFile = "";
+
     try {
-      results = await searchInProject($projectRootStore, query, {
-        include: includePattern || undefined,
-        exclude: excludePattern || undefined,
-        caseSensitive,
-        useRegex: false,
+      // Start streaming search
+      const searchId = await searchStreamingStart($projectRootStore, query, caseSensitive);
+      currentSearchId = searchId;
+
+      // Listen for results
+      const resultUnlisten = await listen<StreamSearchResult>(`search-${searchId}-result`, (event) => {
+        const result = event.payload;
+        const relativePath = getRelativePath(result.path);
+        const parts = relativePath.split("/");
+        const directory = parts.length > 1 ? parts.slice(0, -1).join("/") : "";
+
+        groupedResults = [...groupedResults, {
+          path: result.path,
+          fileName: result.filename,
+          directory,
+          matches: result.matches.map(m => ({
+            line: m.line,
+            content: m.content,
+            matchStart: m.matchStart,
+            matchEnd: m.matchEnd,
+          })),
+        }];
       });
+      unlisteners.push(resultUnlisten);
+
+      // Listen for progress
+      const progressUnlisten = await listen<SearchProgress>(`search-${searchId}-progress`, (event) => {
+        filesSearched = event.payload.files_searched;
+        matchesFound = event.payload.matches_found;
+        currentFile = event.payload.current_file;
+      });
+      unlisteners.push(progressUnlisten);
+
+      // Listen for completion
+      const completeUnlisten = await listen<SearchComplete>(`search-${searchId}-complete`, (event) => {
+        filesSearched = event.payload.total_files;
+        matchesFound = event.payload.total_matches;
+        isSearching = false;
+        currentSearchId = null;
+        cleanupListeners();
+      });
+      unlisteners.push(completeUnlisten);
+
     } catch (err) {
       console.error("Search failed:", err);
       errorMessage = "Search failed: " + err;
-      results = [];
+      isSearching = false;
     }
-    isSearching = false;
+  }
+
+  async function handleCancel() {
+    if (currentSearchId !== null) {
+      await searchStreamingCancel(currentSearchId).catch(() => {});
+      cleanupListeners();
+      isSearching = false;
+      currentSearchId = null;
+    }
   }
 
   async function openResult(path: string, line: number) {
@@ -130,18 +182,11 @@
     expandedFiles = new Set(expandedFiles);
   }
 
-  function highlightMatch(content: string): string {
-    if (!query) return escapeHtml(content);
-    try {
-      const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const escapedContent = escapeHtml(content);
-      return escapedContent.replace(
-        new RegExp(`(${escaped})`, caseSensitive ? 'g' : 'gi'),
-        '<mark>$1</mark>'
-      );
-    } catch {
-      return escapeHtml(content);
-    }
+  function highlightMatch(content: string, matchStart: number, matchEnd: number): string {
+    const before = escapeHtml(content.slice(0, matchStart));
+    const match = escapeHtml(content.slice(matchStart, matchEnd));
+    const after = escapeHtml(content.slice(matchEnd));
+    return `${before}<mark>${match}</mark>${after}`;
   }
 
   function escapeHtml(text: string): string {
@@ -155,12 +200,6 @@
     if (e.key === "Enter") {
       handleSearch();
     } else if (e.key === "Escape") {
-      onClose();
-    }
-  }
-
-  function handleBackdropClick(e: MouseEvent) {
-    if (e.target === e.currentTarget) {
       onClose();
     }
   }
@@ -187,13 +226,15 @@
           <span>Aa</span>
         </label>
       </div>
-      <button class="search-btn" onclick={handleSearch} disabled={isSearching || !query.trim()}>
-        {#if isSearching}
-          <span class="spinner"></span>
-        {:else}
+      {#if isSearching}
+        <button class="cancel-btn" onclick={handleCancel}>
+          Cancel
+        </button>
+      {:else}
+        <button class="search-btn" onclick={handleSearch} disabled={!query.trim()}>
           Search
-        {/if}
-      </button>
+        </button>
+      {/if}
       <button class="close-btn" onclick={onClose}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -202,9 +243,17 @@
       </button>
     </div>
 
-    {#if errorMessage}
+    {#if isSearching}
+      <div class="progress-info">
+        <span class="spinner"></span>
+        <span>Searching... {filesSearched} files, {matchesFound} matches</span>
+        {#if currentFile}
+          <span class="current-file">{currentFile}</span>
+        {/if}
+      </div>
+    {:else if errorMessage}
       <div class="results-info error">{errorMessage}</div>
-    {:else if results.length > 0}
+    {:else if groupedResults.length > 0}
       <div class="results-info">
         <span class="count">{totalMatches}</span> results in <span class="count">{totalFiles}</span> files
       </div>
@@ -235,7 +284,7 @@
             {#each group.matches as match}
               <button class="match-item" onclick={() => openResult(group.path, match.line)}>
                 <span class="line-num">{match.line}</span>
-                <span class="line-text">{@html highlightMatch(match.content)}</span>
+                <span class="line-text">{@html highlightMatch(match.content, match.matchStart, match.matchEnd)}</span>
               </button>
             {/each}
           </div>
@@ -332,6 +381,20 @@
     cursor: not-allowed;
   }
 
+  .cancel-btn {
+    padding: 10px 20px;
+    background: #ef4444;
+    color: white;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background 0.15s;
+  }
+
+  .cancel-btn:hover {
+    background: #dc2626;
+  }
+
   .close-btn {
     padding: 8px;
     border-radius: 6px;
@@ -345,17 +408,34 @@
   }
 
   .spinner {
-    width: 16px;
-    height: 16px;
+    width: 14px;
+    height: 14px;
     border: 2px solid transparent;
-    border-top-color: currentColor;
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
     display: inline-block;
+    flex-shrink: 0;
   }
 
   @keyframes spin {
     to { transform: rotate(360deg); }
+  }
+
+  .progress-info {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .current-file {
+    color: var(--text-secondary);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 11px;
+    opacity: 0.7;
   }
 
   .results-info {

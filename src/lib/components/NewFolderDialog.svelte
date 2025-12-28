@@ -66,12 +66,11 @@
   .dialog-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    backdrop-filter: blur(2px);
   }
 
   .dialog {
@@ -101,7 +100,6 @@
     padding: 6px;
     border-radius: 6px;
     color: var(--text-muted);
-    transition: all 0.15s;
   }
 
   .close-btn:hover {
@@ -159,7 +157,6 @@
     background: var(--bg-secondary);
     color: var(--text-primary);
     border: 1px solid var(--border);
-    transition: all 0.15s;
   }
 
   .btn-secondary:hover {
@@ -173,7 +170,6 @@
     border-radius: 8px;
     background: var(--accent);
     color: var(--bg-primary);
-    transition: all 0.15s;
   }
 
   .btn-primary:hover:not(:disabled) {

@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { settingsStore } from "$lib/stores/settings";
+
   interface Props {
     name: string;
     isDirectory?: boolean;
@@ -7,6 +9,8 @@
   }
 
   let { name, isDirectory = false, isExpanded = false, size = 18 }: Props = $props();
+
+  let isDarkTheme = $derived($settingsStore.theme === "dark");
 
   function getFolderColor(folderName: string): { main: string; dark: string } {
     const colors: Record<string, { main: string; dark: string }> = {
@@ -194,8 +198,9 @@
   let fileInfo = $derived(getFileType(name));
 </script>
 
+<span class="icon-wrapper" class:light={!isDarkTheme}>
 {#if isDirectory}
-  <!-- Folder icon - PhpStorm style -->
+  <!-- Folder icon - very distinct open/closed styles -->
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
     <defs>
       <linearGradient id="folder-grad-{name}" x1="0" y1="0" x2="0" y2="1">
@@ -204,15 +209,21 @@
       </linearGradient>
     </defs>
     {#if isExpanded}
-      <!-- Open folder -->
-      <path d="M2 6a2 2 0 012-2h4l2 2h10a2 2 0 012 2v1H2V6z" fill={folderColors.dark}/>
-      <path d="M1 9h22l-2.5 11H3.5L1 9z" fill="url(#folder-grad-{name})"/>
-      <path d="M1 9h22" stroke="rgba(255,255,255,0.3)" stroke-width="0.5"/>
+      <!-- OPEN folder - completely different shape -->
+      <!-- Folder back/tab -->
+      <path d="M2 6a2 2 0 012-2h4l2 2h10a2 2 0 012 2v2H2V6z" fill={folderColors.dark}/>
+      <!-- Open front - angled/3D perspective -->
+      <path d="M1 10l2-1h18l2 1-3 10H4L1 10z" fill="url(#folder-grad-{name})"/>
+      <!-- Bright edge highlight -->
+      <path d="M3 9h18" stroke="rgba(255,255,255,0.6)" stroke-width="1.5"/>
+      <!-- Papers inside -->
+      <rect x="6" y="5" width="8" height="1" rx="0.5" fill="rgba(255,255,255,0.5)"/>
+      <rect x="7" y="6.5" width="6" height="1" rx="0.5" fill="rgba(255,255,255,0.3)"/>
     {:else}
-      <!-- Closed folder -->
-      <path d="M2 6a2 2 0 012-2h4l2 2h10a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" fill="url(#folder-grad-{name})"/>
-      <path d="M2 8h20" stroke="rgba(0,0,0,0.2)" stroke-width="0.5"/>
-      <path d="M2 6a2 2 0 012-2h4l2 2h10a2 2 0 012 2H2V6z" fill={folderColors.main} opacity="0.3"/>
+      <!-- CLOSED folder - flat rectangle -->
+      <path d="M3 6a2 2 0 012-2h4l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V6z" fill="url(#folder-grad-{name})"/>
+      <!-- Tab at top -->
+      <path d="M3 6a2 2 0 012-2h4l2 2H3z" fill={folderColors.main} opacity="0.5"/>
     {/if}
   </svg>
 {:else}
@@ -357,8 +368,18 @@
     {/if}
   </svg>
 {/if}
+</span>
 
 <style>
+  .icon-wrapper {
+    display: inline-flex;
+    flex-shrink: 0;
+  }
+
+  .icon-wrapper.light {
+    filter: saturate(1.5) brightness(0.75) contrast(1.1);
+  }
+
   svg {
     flex-shrink: 0;
     display: inline-block;

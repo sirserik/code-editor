@@ -15,6 +15,11 @@ export interface OpenFile {
   language: string;
   isDirty: boolean;
   cursorPosition: { line: number; column: number };
+  // Large file support
+  isPartial?: boolean;
+  totalLines?: number;
+  loadedLines?: number;
+  totalSize?: number;
 }
 
 // Store for open files
@@ -58,6 +63,29 @@ function createFilesStore() {
       update((files) =>
         files.map((f) =>
           f.path === path ? { ...f, cursorPosition: { line, column } } : f
+        )
+      );
+    },
+    // Update file with more content (for large files)
+    appendContent: (path: string, newContent: string, loadedLines: number) => {
+      update((files) =>
+        files.map((f) =>
+          f.path === path
+            ? {
+                ...f,
+                content: f.content + "\n" + newContent,
+                loadedLines,
+                isPartial: loadedLines < (f.totalLines || 0),
+              }
+            : f
+        )
+      );
+    },
+    // Mark file as fully loaded
+    markFullyLoaded: (path: string) => {
+      update((files) =>
+        files.map((f) =>
+          f.path === path ? { ...f, isPartial: false } : f
         )
       );
     },

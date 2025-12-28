@@ -1,55 +1,108 @@
 import type { Extension } from "@codemirror/state";
-import { javascript } from "@codemirror/lang-javascript";
-import { python } from "@codemirror/lang-python";
-import { rust } from "@codemirror/lang-rust";
-import { html } from "@codemirror/lang-html";
-import { css } from "@codemirror/lang-css";
-import { json } from "@codemirror/lang-json";
-import { markdown } from "@codemirror/lang-markdown";
-import { sql } from "@codemirror/lang-sql";
-import { php } from "@codemirror/lang-php";
-import { go } from "@codemirror/lang-go";
-import { java } from "@codemirror/lang-java";
-import { cpp } from "@codemirror/lang-cpp";
 
-export function getLanguageExtension(language: string): Extension {
-  switch (language) {
-    case "javascript":
-      return javascript();
-    case "typescript":
-      return javascript({ typescript: true });
-    case "jsx":
-      return javascript({ jsx: true });
-    case "tsx":
-      return javascript({ typescript: true, jsx: true });
-    case "python":
-      return python();
-    case "rust":
-      return rust();
-    case "html":
-      return html();
-    case "css":
-    case "scss":
-    case "less":
-      return css();
-    case "json":
-      return json();
-    case "markdown":
-      return markdown();
-    case "sql":
-      return sql();
-    case "php":
-      return php();
-    case "go":
-      return go();
-    case "java":
-      return java();
-    case "c":
-    case "cpp":
-      return cpp();
-    default:
-      return [];
+// Lazy load language extensions to reduce initial bundle size
+const languageLoaders: Record<string, () => Promise<Extension>> = {
+  javascript: async () => {
+    const { javascript } = await import("@codemirror/lang-javascript");
+    return javascript();
+  },
+  typescript: async () => {
+    const { javascript } = await import("@codemirror/lang-javascript");
+    return javascript({ typescript: true });
+  },
+  jsx: async () => {
+    const { javascript } = await import("@codemirror/lang-javascript");
+    return javascript({ jsx: true });
+  },
+  tsx: async () => {
+    const { javascript } = await import("@codemirror/lang-javascript");
+    return javascript({ typescript: true, jsx: true });
+  },
+  python: async () => {
+    const { python } = await import("@codemirror/lang-python");
+    return python();
+  },
+  rust: async () => {
+    const { rust } = await import("@codemirror/lang-rust");
+    return rust();
+  },
+  html: async () => {
+    const { html } = await import("@codemirror/lang-html");
+    return html();
+  },
+  css: async () => {
+    const { css } = await import("@codemirror/lang-css");
+    return css();
+  },
+  scss: async () => {
+    const { css } = await import("@codemirror/lang-css");
+    return css();
+  },
+  less: async () => {
+    const { css } = await import("@codemirror/lang-css");
+    return css();
+  },
+  json: async () => {
+    const { json } = await import("@codemirror/lang-json");
+    return json();
+  },
+  markdown: async () => {
+    const { markdown } = await import("@codemirror/lang-markdown");
+    return markdown();
+  },
+  sql: async () => {
+    const { sql } = await import("@codemirror/lang-sql");
+    return sql();
+  },
+  php: async () => {
+    const { php } = await import("@codemirror/lang-php");
+    return php();
+  },
+  go: async () => {
+    const { go } = await import("@codemirror/lang-go");
+    return go();
+  },
+  java: async () => {
+    const { java } = await import("@codemirror/lang-java");
+    return java();
+  },
+  c: async () => {
+    const { cpp } = await import("@codemirror/lang-cpp");
+    return cpp();
+  },
+  cpp: async () => {
+    const { cpp } = await import("@codemirror/lang-cpp");
+    return cpp();
+  },
+};
+
+// Cache loaded extensions
+const loadedExtensions: Map<string, Extension> = new Map();
+
+export async function getLanguageExtension(language: string): Promise<Extension> {
+  // Return cached extension if available
+  if (loadedExtensions.has(language)) {
+    return loadedExtensions.get(language)!;
   }
+
+  const loader = languageLoaders[language];
+  if (!loader) {
+    return [];
+  }
+
+  try {
+    const ext = await loader();
+    loadedExtensions.set(language, ext);
+    return ext;
+  } catch (err) {
+    console.error(`Failed to load language: ${language}`, err);
+    return [];
+  }
+}
+
+// Synchronous version for initial setup (returns empty, then updates)
+export function getLanguageExtensionSync(language: string): Extension {
+  return loadedExtensions.get(language) || [];
 }
 
 export const supportedLanguages = [

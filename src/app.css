@@ -30,6 +30,17 @@
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Menlo', monospace;
   --font-size: 13px;
   --line-height: 1.6;
+
+  /* Shadows - simplified for performance */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Performance: disable all transitions globally */
+*, *::before, *::after {
+  transition: none !important;
+  animation-duration: 0.001ms !important;
 }
 
 /* Tokyo Night Day - Light theme */
@@ -40,9 +51,9 @@
   --bg-hover: #c4c5ca;
   --bg-active: #b6bfe2;
 
-  --text-primary: #3760bf;
-  --text-secondary: #6172b0;
-  --text-muted: #848cb5;
+  --text-primary: #1a1b26;
+  --text-secondary: #3760bf;
+  --text-muted: #5a6078;
 
   --accent: #2e7de9;
   --accent-hover: #007197;
@@ -50,7 +61,7 @@
   --warning: #8c6c3e;
   --error: #f52a65;
 
-  --border: #c4c5ca;
+  --border: #b8b9be;
   --scrollbar: #9699a3;
   --scrollbar-hover: #6172b0;
 }
@@ -100,6 +111,38 @@ body {
 ::selection {
   background: var(--accent);
   color: var(--bg-primary);
+}
+
+/* CodeMirror selection - visible */
+.cm-selectionBackground {
+  background: #214283 !important;
+}
+
+/* Make sure text doesn't have background that hides selection */
+.cm-content,
+.cm-line {
+  background: transparent !important;
+}
+
+/* Selected text should be white/visible */
+.cm-editor .cm-line::selection,
+.cm-editor .cm-line *::selection,
+.cm-editor .cm-content::selection,
+.cm-editor .cm-content *::selection {
+  background: transparent !important;
+  color: #ffffff !important;
+}
+
+/* Light theme */
+[data-theme="light"] .cm-selectionBackground {
+  background: #add6ff !important;
+}
+
+[data-theme="light"] .cm-editor .cm-line::selection,
+[data-theme="light"] .cm-editor .cm-line *::selection,
+[data-theme="light"] .cm-editor .cm-content::selection,
+[data-theme="light"] .cm-editor .cm-content *::selection {
+  color: #000000 !important;
 }
 
 /* Button reset */

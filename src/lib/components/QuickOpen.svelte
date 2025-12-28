@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { projectRootStore, filesStore, activeFilePathStore, getLanguageFromPath } from "$lib/stores/files";
-  import { readFile } from "$lib/utils/ipc";
-  import { invoke } from "@tauri-apps/api/core";
+  import { readFile, fuzzySearchFiles, getAllFiles, type FuzzySearchResult } from "$lib/utils/ipc";
 
   interface Props {
     onClose: () => void;
@@ -12,6 +11,7 @@
     path: string;
     name: string;
     relativePath: string;
+    matchedIndices?: number[];
   }
 
   let { onClose }: Props = $props();
@@ -20,53 +20,51 @@
   let results = $state<FileMatch[]>([]);
   let selectedIndex = $state(0);
   let inputEl: HTMLInputElement;
-  let allFiles = $state<FileMatch[]>([]);
+  let initialFiles = $state<FileMatch[]>([]);
   let isLoading = $state(true);
+  let searchTimeout: ReturnType<typeof setTimeout> | null = null;
 
-  async function loadAllFiles() {
+  async function loadInitialFiles() {
     if (!$projectRootStore) {
       isLoading = false;
       return;
     }
 
     try {
-      const files = await invoke<string[]>("get_all_files", { rootPath: $projectRootStore });
-      allFiles = files.map(path => ({
+      const files = await getAllFiles($projectRootStore);
+      initialFiles = files.slice(0, 50).map(path => ({
         path,
         name: path.split("/").pop() || path,
         relativePath: path.replace($projectRootStore + "/", ""),
       }));
+      results = initialFiles;
     } catch (err) {
-      // Fallback to a simpler approach - just show currently open files
       console.error("Failed to get files:", err);
-      allFiles = [];
     }
     isLoading = false;
   }
 
-  function filterFiles(q: string): FileMatch[] {
+  async function performSearch(q: string) {
+    if (!$projectRootStore) return;
+
     if (!q.trim()) {
-      return allFiles.slice(0, 50);
+      results = initialFiles;
+      selectedIndex = 0;
+      return;
     }
 
-    const searchTerms = q.toLowerCase().split(/\s+/);
-
-    return allFiles
-      .filter(file => {
-        const lowerPath = file.relativePath.toLowerCase();
-        return searchTerms.every(term => lowerPath.includes(term));
-      })
-      .sort((a, b) => {
-        // Prefer exact name matches
-        const aExact = a.name.toLowerCase().includes(q.toLowerCase());
-        const bExact = b.name.toLowerCase().includes(q.toLowerCase());
-        if (aExact && !bExact) return -1;
-        if (!aExact && bExact) return 1;
-
-        // Then sort by path length (shorter = better)
-        return a.relativePath.length - b.relativePath.length;
-      })
-      .slice(0, 50);
+    try {
+      const searchResults = await fuzzySearchFiles($projectRootStore, q, 50);
+      results = searchResults.map((r: FuzzySearchResult) => ({
+        path: r.path,
+        name: r.filename,
+        relativePath: r.path.replace($projectRootStore + "/", ""),
+        matchedIndices: r.matched_indices,
+      }));
+      selectedIndex = 0;
+    } catch (err) {
+      console.error("Fuzzy search failed:", err);
+    }
   }
 
   async function openFile(file: FileMatch) {
@@ -107,14 +105,17 @@
     }
   }
 
+  // Debounced search
   $effect(() => {
-    results = filterFiles(query);
-    selectedIndex = 0;
+    if (searchTimeout) {
+      clearTimeout(searchTimeout);
+    }
+    searchTimeout = setTimeout(() => performSearch(query), 50);
   });
 
   onMount(() => {
     inputEl?.focus();
-    loadAllFiles();
+    loadInitialFiles();
   });
 </script>
 
@@ -156,7 +157,19 @@
             onmouseenter={() => selectedIndex = index}
           >
             <span class="file-icon">{getFileIcon(file.name)}</span>
-            <span class="file-name">{file.name}</span>
+            <span class="file-name">
+              {#if file.matchedIndices && file.matchedIndices.length > 0}
+                {#each file.name.split("") as char, i}
+                  {#if file.matchedIndices.includes(i)}
+                    <span class="highlight">{char}</span>
+                  {:else}
+                    {char}
+                  {/if}
+                {/each}
+              {:else}
+                {file.name}
+              {/if}
+            </span>
             <span class="file-path">{file.relativePath}</span>
           </button>
         {/each}
@@ -262,6 +275,11 @@
   .file-name {
     color: var(--text-primary);
     font-weight: 500;
+  }
+
+  .file-name .highlight {
+    color: var(--accent);
+    font-weight: 700;
   }
 
   .file-path {

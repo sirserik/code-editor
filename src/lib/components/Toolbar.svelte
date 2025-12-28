@@ -39,6 +39,10 @@
   }: Props = $props();
 
   let activeMenu = $state<string | null>(null);
+  let showShortcuts = $state(false);
+  let showAbout = $state(false);
+
+  const APP_VERSION = "1.0.0";
 
   const isMac = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
   const mod = isMac ? '⌘' : 'Ctrl';
@@ -58,7 +62,13 @@
 
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Escape') {
-      closeMenu();
+      if (showShortcuts) {
+        showShortcuts = false;
+      } else if (showAbout) {
+        showAbout = false;
+      } else {
+        closeMenu();
+      }
     }
   }
 </script>
@@ -230,6 +240,30 @@
     {/if}
   </div>
 
+  <!-- Help Menu -->
+  <div class="menu-container">
+    <button
+      class="menu-trigger"
+      class:active={activeMenu === 'help'}
+      onclick={() => toggleMenu('help')}
+    >
+      Help
+    </button>
+    {#if activeMenu === 'help'}
+      <div class="menu-dropdown">
+        <button class="menu-item" onclick={() => { showShortcuts = true; closeMenu(); }}>
+          <span class="menu-label">Keyboard Shortcuts</span>
+          <span class="menu-shortcut">{mod}+K {mod}+S</span>
+        </button>
+        <div class="menu-separator"></div>
+        <button class="menu-item" onclick={() => { showAbout = true; closeMenu(); }}>
+          <span class="menu-label">About</span>
+          <span class="menu-shortcut"></span>
+        </button>
+      </div>
+    {/if}
+  </div>
+
   <div class="toolbar-spacer"></div>
 
   <!-- Right side: zoom & project info -->
@@ -265,6 +299,103 @@
     {/if}
   </div>
 </div>
+
+<!-- Keyboard Shortcuts Dialog -->
+{#if showShortcuts}
+  <div class="dialog-overlay" onclick={() => showShortcuts = false} role="presentation">
+    <div class="dialog shortcuts-dialog" onclick={(e) => e.stopPropagation()}>
+      <div class="dialog-header">
+        <h2>Keyboard Shortcuts</h2>
+        <button class="close-btn" onclick={() => showShortcuts = false} aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-content">
+        <div class="shortcuts-grid">
+          <div class="shortcut-category">
+            <h3>File</h3>
+            <div class="shortcut-item"><span>New File</span><kbd>{mod}+N</kbd></div>
+            <div class="shortcut-item"><span>Open File</span><kbd>{mod}+O</kbd></div>
+            <div class="shortcut-item"><span>Open Folder</span><kbd>{mod}+Shift+O</kbd></div>
+            <div class="shortcut-item"><span>Save</span><kbd>{mod}+S</kbd></div>
+            <div class="shortcut-item"><span>Save All</span><kbd>{mod}+Shift+S</kbd></div>
+            <div class="shortcut-item"><span>Close File</span><kbd>{mod}+W</kbd></div>
+          </div>
+          <div class="shortcut-category">
+            <h3>Edit</h3>
+            <div class="shortcut-item"><span>Undo</span><kbd>{mod}+Z</kbd></div>
+            <div class="shortcut-item"><span>Redo</span><kbd>{mod}+Shift+Z</kbd></div>
+            <div class="shortcut-item"><span>Cut</span><kbd>{mod}+X</kbd></div>
+            <div class="shortcut-item"><span>Copy</span><kbd>{mod}+C</kbd></div>
+            <div class="shortcut-item"><span>Paste</span><kbd>{mod}+V</kbd></div>
+            <div class="shortcut-item"><span>Find in Files</span><kbd>{mod}+Shift+F</kbd></div>
+          </div>
+          <div class="shortcut-category">
+            <h3>View</h3>
+            <div class="shortcut-item"><span>Command Palette</span><kbd>{mod}+Shift+P</kbd></div>
+            <div class="shortcut-item"><span>Quick Open</span><kbd>{mod}+P</kbd></div>
+            <div class="shortcut-item"><span>Toggle Sidebar</span><kbd>{mod}+B</kbd></div>
+            <div class="shortcut-item"><span>Toggle Terminal</span><kbd>{mod}+`</kbd></div>
+            <div class="shortcut-item"><span>Zoom In</span><kbd>{mod}+=</kbd></div>
+            <div class="shortcut-item"><span>Zoom Out</span><kbd>{mod}+-</kbd></div>
+            <div class="shortcut-item"><span>Reset Zoom</span><kbd>{mod}+0</kbd></div>
+          </div>
+          <div class="shortcut-category">
+            <h3>Editor</h3>
+            <div class="shortcut-item"><span>Go to Line</span><kbd>{mod}+G</kbd></div>
+            <div class="shortcut-item"><span>Duplicate Line</span><kbd>{mod}+D</kbd></div>
+            <div class="shortcut-item"><span>Move Line Up</span><kbd>Alt+Up</kbd></div>
+            <div class="shortcut-item"><span>Move Line Down</span><kbd>Alt+Down</kbd></div>
+            <div class="shortcut-item"><span>Go to Bracket</span><kbd>{mod}+Shift+M</kbd></div>
+            <div class="shortcut-item"><span>Indent</span><kbd>Tab</kbd></div>
+            <div class="shortcut-item"><span>Outdent</span><kbd>Shift+Tab</kbd></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- About Dialog -->
+{#if showAbout}
+  <div class="dialog-overlay" onclick={() => showAbout = false} role="presentation">
+    <div class="dialog about-dialog" onclick={(e) => e.stopPropagation()}>
+      <div class="dialog-header">
+        <h2>About Code Editor</h2>
+        <button class="close-btn" onclick={() => showAbout = false} aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="dialog-content about-content">
+        <div class="app-icon">
+          <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+            <line x1="12" y1="2" x2="12" y2="22" stroke="var(--accent)" stroke-width="0.5" opacity="0.5"></line>
+          </svg>
+        </div>
+        <h3>Code Editor</h3>
+        <p class="version">Version {APP_VERSION}</p>
+        <p class="description">
+          A lightweight, fast, and modern code editor built with Tauri, Svelte, and CodeMirror.
+        </p>
+        <div class="tech-stack">
+          <span class="tech-badge">Tauri 2</span>
+          <span class="tech-badge">Svelte 5</span>
+          <span class="tech-badge">CodeMirror 6</span>
+          <span class="tech-badge">Rust</span>
+        </div>
+        <p class="copyright">MIT License</p>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .toolbar {
@@ -425,5 +556,158 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Dialog styles */
+  .dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .dialog {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+    max-height: 80vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .shortcuts-dialog {
+    width: 700px;
+    max-width: 90vw;
+  }
+
+  .about-dialog {
+    width: 400px;
+    max-width: 90vw;
+  }
+
+  .dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .dialog-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+  }
+
+  .close-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px;
+    color: var(--text-muted);
+    border-radius: 6px;
+  }
+
+  .close-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+
+  .dialog-content {
+    padding: 20px;
+    overflow-y: auto;
+  }
+
+  /* Shortcuts grid */
+  .shortcuts-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 24px;
+  }
+
+  .shortcut-category h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin: 0 0 12px 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .shortcut-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+
+  .shortcut-item kbd {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 3px 8px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+  }
+
+  /* About dialog content */
+  .about-content {
+    text-align: center;
+  }
+
+  .app-icon {
+    margin-bottom: 16px;
+  }
+
+  .about-content h3 {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 8px 0;
+  }
+
+  .version {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 16px 0;
+  }
+
+  .description {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0 0 20px 0;
+  }
+
+  .tech-stack {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .tech-badge {
+    font-size: 11px;
+    padding: 4px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    color: var(--text-secondary);
+  }
+
+  .copyright {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
   }
 </style>

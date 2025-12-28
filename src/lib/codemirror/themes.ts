@@ -79,14 +79,8 @@ const darkTheme = EditorView.theme(
       borderLeftColor: tokyoNight.cursor,
       borderLeftWidth: "2px",
     },
-    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: "#264f78 !important",
-    },
-    ".cm-selectionLayer .cm-selectionBackground": {
-      backgroundColor: "#264f78 !important",
-    },
-    "::selection": {
-      backgroundColor: "#264f78 !important",
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+      background: "#214283 !important",
     },
     ".cm-panels": {
       backgroundColor: tokyoNight.bgDark,
@@ -165,8 +159,8 @@ const lightTheme = EditorView.theme(
       borderLeftColor: tokyoDay.cursor,
       borderLeftWidth: "2px",
     },
-    "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: tokyoDay.selection,
+    "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
+      background: "#add6ff !important",
     },
     ".cm-panels": {
       backgroundColor: tokyoDay.bgDark,

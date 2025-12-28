@@ -14,6 +14,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 // Global LSP manager
 static LSP_MANAGER: Lazy<Arc<Mutex<LspManager>>> = Lazy::new(|| {
@@ -26,6 +27,9 @@ static REQUEST_ID: AtomicI64 = AtomicI64::new(1);
 fn next_request_id() -> i64 {
     REQUEST_ID.fetch_add(1, Ordering::SeqCst)
 }
+
+// Server idle timeout (5 minutes)
+const SERVER_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionResult {
@@ -46,22 +50,44 @@ pub struct TextEdit {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct HoverResult {
-    pub contents: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LocationResult {
-    pub path: String,
-    pub line: u32,
-    pub column: u32,
+pub struct LspServerStatus {
+    pub language: String,
+    pub status: String, // "running", "stopped", "error"
+    pub uptime_secs: u64,
+    pub requests_served: u64,
 }
 
 struct LspServer {
     process: Child,
+    #[allow(dead_code)]
     language: String,
+    #[allow(dead_code)]
     initialized: bool,
+    #[allow(dead_code)]
     pending_responses: HashMap<i64, tokio::sync::oneshot::Sender<Value>>,
+    started_at: Instant,
+    last_used: Instant,
+    requests_served: u64,
+    workspace_root: String,
+}
+
+impl LspServer {
+    fn is_alive(&mut self) -> bool {
+        match self.process.try_wait() {
+            Ok(None) => true,  // Still running
+            Ok(Some(_)) => false,  // Exited
+            Err(_) => false,  // Error checking
+        }
+    }
+
+    fn touch(&mut self) {
+        self.last_used = Instant::now();
+        self.requests_served += 1;
+    }
+
+    fn is_idle(&self) -> bool {
+        self.last_used.elapsed() > SERVER_IDLE_TIMEOUT
+    }
 }
 
 struct LspManager {
@@ -80,20 +106,48 @@ impl LspManager {
     fn get_server_command(language: &str) -> Option<(String, Vec<String>)> {
         match language {
             "typescript" | "javascript" | "tsx" | "jsx" => {
-                // typescript-language-server
                 Some(("typescript-language-server".to_string(), vec!["--stdio".to_string()]))
             }
             "php" => {
-                // intelephense
                 Some(("intelephense".to_string(), vec!["--stdio".to_string()]))
+            }
+            "rust" => {
+                Some(("rust-analyzer".to_string(), vec![]))
+            }
+            "python" => {
+                Some(("pylsp".to_string(), vec![]))
+            }
+            "go" => {
+                Some(("gopls".to_string(), vec![]))
+            }
+            "html" | "css" | "scss" | "less" => {
+                Some(("vscode-css-language-server".to_string(), vec!["--stdio".to_string()]))
+            }
+            "json" => {
+                Some(("vscode-json-language-server".to_string(), vec!["--stdio".to_string()]))
             }
             _ => None,
         }
     }
 
+    fn get_language_id(language: &str) -> &str {
+        match language {
+            "tsx" => "typescriptreact",
+            "jsx" => "javascriptreact",
+            _ => language,
+        }
+    }
+
     fn start_server(&mut self, language: &str, workspace_root: &str) -> Result<(), String> {
-        if self.servers.contains_key(language) {
-            return Ok(());
+        // Check if server exists and is alive
+        if let Some(server) = self.servers.get_mut(language) {
+            if server.is_alive() {
+                server.touch();
+                return Ok(());
+            } else {
+                // Server died, remove it
+                self.servers.remove(language);
+            }
         }
 
         let (cmd, args) = Self::get_server_command(language)
@@ -145,7 +199,7 @@ impl LspManager {
         Self::send_message(&mut process, &request)?;
 
         // Read initialize response
-        let response = Self::read_message(&mut process)?;
+        let _response = Self::read_message(&mut process)?;
 
         // Send initialized notification
         let initialized = json!({
@@ -155,11 +209,16 @@ impl LspManager {
         });
         Self::send_message(&mut process, &initialized)?;
 
+        let now = Instant::now();
         self.servers.insert(language.to_string(), LspServer {
             process,
             language: language.to_string(),
             initialized: true,
             pending_responses: HashMap::new(),
+            started_at: now,
+            last_used: now,
+            requests_served: 0,
+            workspace_root: workspace_root.to_string(),
         });
 
         Ok(())
@@ -211,6 +270,7 @@ impl LspManager {
 
     fn notify_open(&mut self, language: &str, path: &str, content: &str) -> Result<(), String> {
         let server = self.servers.get_mut(language).ok_or("Server not running")?;
+        server.touch();
 
         let uri = Url::from_file_path(path).map_err(|_| "Invalid path")?;
         let version = self.open_documents.entry(path.to_string()).or_insert(0);
@@ -219,7 +279,7 @@ impl LspManager {
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {
                 uri,
-                language_id: language.to_string(),
+                language_id: Self::get_language_id(language).to_string(),
                 version: *version,
                 text: content.to_string(),
             },
@@ -236,6 +296,7 @@ impl LspManager {
 
     fn notify_change(&mut self, language: &str, path: &str, content: &str) -> Result<(), String> {
         let server = self.servers.get_mut(language).ok_or("Server not running")?;
+        server.touch();
 
         let uri = Url::from_file_path(path).map_err(|_| "Invalid path")?;
         let version = self.open_documents.entry(path.to_string()).or_insert(0);
@@ -264,6 +325,7 @@ impl LspManager {
 
     fn get_completions(&mut self, language: &str, path: &str, line: u32, column: u32) -> Result<Vec<CompletionResult>, String> {
         let server = self.servers.get_mut(language).ok_or("Server not running")?;
+        server.touch();
 
         let uri = Url::from_file_path(path).map_err(|_| "Invalid path")?;
         let params = CompletionParams {
@@ -324,10 +386,67 @@ impl LspManager {
         }).collect())
     }
 
-    fn stop_all(&mut self) {
-        for (_, mut server) in self.servers.drain() {
+    fn stop_server(&mut self, language: &str) -> Result<(), String> {
+        if let Some(mut server) = self.servers.remove(language) {
+            // Send shutdown request
+            let shutdown = json!({
+                "jsonrpc": "2.0",
+                "id": next_request_id(),
+                "method": "shutdown"
+            });
+            let _ = Self::send_message(&mut server.process, &shutdown);
+
+            // Send exit notification
+            let exit = json!({
+                "jsonrpc": "2.0",
+                "method": "exit"
+            });
+            let _ = Self::send_message(&mut server.process, &exit);
+
+            // Wait a bit then kill if needed
+            std::thread::sleep(Duration::from_millis(100));
             let _ = server.process.kill();
         }
+        Ok(())
+    }
+
+    fn stop_all(&mut self) {
+        let languages: Vec<String> = self.servers.keys().cloned().collect();
+        for lang in languages {
+            let _ = self.stop_server(&lang);
+        }
+    }
+
+    fn cleanup_idle_servers(&mut self) {
+        let idle_languages: Vec<String> = self.servers.iter()
+            .filter(|(_, server)| server.is_idle())
+            .map(|(lang, _)| lang.clone())
+            .collect();
+
+        for lang in idle_languages {
+            let _ = self.stop_server(&lang);
+        }
+    }
+
+    fn get_status(&self) -> Vec<LspServerStatus> {
+        self.servers.iter().map(|(lang, server)| {
+            LspServerStatus {
+                language: lang.clone(),
+                status: "running".to_string(),
+                uptime_secs: server.started_at.elapsed().as_secs(),
+                requests_served: server.requests_served,
+            }
+        }).collect()
+    }
+
+    fn restart_server(&mut self, language: &str) -> Result<(), String> {
+        let workspace_root = self.servers
+            .get(language)
+            .map(|s| s.workspace_root.clone())
+            .ok_or("Server not found")?;
+
+        self.stop_server(language)?;
+        self.start_server(language, &workspace_root)
     }
 }
 
@@ -378,6 +497,33 @@ pub async fn lsp_stop() -> Result<(), String> {
 }
 
 #[tauri::command]
+pub async fn lsp_stop_language(language: String) -> Result<(), String> {
+    let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    manager.stop_server(&language)
+}
+
+#[tauri::command]
+pub async fn lsp_restart(language: String) -> Result<(), String> {
+    let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    manager.restart_server(&language)
+}
+
+#[tauri::command]
+pub async fn lsp_status() -> Result<Vec<LspServerStatus>, String> {
+    let manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    Ok(manager.get_status())
+}
+
+#[tauri::command]
+pub async fn lsp_cleanup_idle() -> Result<u32, String> {
+    let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    let before = manager.servers.len();
+    manager.cleanup_idle_servers();
+    let after = manager.servers.len();
+    Ok((before - after) as u32)
+}
+
+#[tauri::command]
 pub async fn lsp_open_file(language: String, path: String, content: String) -> Result<(), String> {
     let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
     manager.notify_open(&language, &path, &content)
@@ -393,6 +539,21 @@ pub async fn lsp_update_file(language: String, path: String, content: String) ->
 pub async fn lsp_get_completions(language: String, path: String, line: u32, column: u32) -> Result<Vec<CompletionResult>, String> {
     let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
     manager.get_completions(&language, &path, line, column)
+}
+
+// Warm up LSP servers for common languages in a project
+#[tauri::command]
+pub async fn lsp_warmup(workspace_root: String, languages: Vec<String>) -> Result<Vec<String>, String> {
+    let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    let mut started = Vec::new();
+
+    for lang in languages {
+        if manager.start_server(&lang, &workspace_root).is_ok() {
+            started.push(lang);
+        }
+    }
+
+    Ok(started)
 }
 
 // Simple built-in Emmet expansion

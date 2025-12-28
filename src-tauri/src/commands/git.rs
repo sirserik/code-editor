@@ -1,14 +1,21 @@
 use git2::{DiffOptions, Repository, StatusOptions};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::Path;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
-#[derive(Debug, Serialize, Deserialize)]
+// Cache configuration
+const CACHE_TTL_MS: u64 = 2000; // 2 seconds TTL
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitFileStatus {
     pub path: String,
     pub status: String,
     pub staged: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitStatus {
     pub branch: String,
     pub ahead: u32,
@@ -16,8 +23,52 @@ pub struct GitStatus {
     pub files: Vec<GitFileStatus>,
 }
 
+// Cached entry with timestamp
+struct CachedStatus {
+    status: GitStatus,
+    timestamp: Instant,
+}
+
+// Global cache for git status
+static GIT_STATUS_CACHE: once_cell::sync::Lazy<Mutex<HashMap<String, CachedStatus>>> =
+    once_cell::sync::Lazy::new(|| Mutex::new(HashMap::new()));
+
+fn invalidate_cache(repo_path: &str) {
+    if let Ok(mut cache) = GIT_STATUS_CACHE.lock() {
+        cache.remove(repo_path);
+    }
+}
+
+fn get_cached_status(repo_path: &str) -> Option<GitStatus> {
+    let cache = GIT_STATUS_CACHE.lock().ok()?;
+    let entry = cache.get(repo_path)?;
+
+    // Check if cache is still valid
+    if entry.timestamp.elapsed() < Duration::from_millis(CACHE_TTL_MS) {
+        Some(entry.status.clone())
+    } else {
+        None
+    }
+}
+
+fn set_cached_status(repo_path: &str, status: GitStatus) {
+    if let Ok(mut cache) = GIT_STATUS_CACHE.lock() {
+        cache.insert(
+            repo_path.to_string(),
+            CachedStatus {
+                status,
+                timestamp: Instant::now(),
+            },
+        );
+    }
+}
+
 #[tauri::command]
 pub fn git_status(repo_path: String) -> Result<GitStatus, String> {
+    // Check cache first
+    if let Some(cached) = get_cached_status(&repo_path) {
+        return Ok(cached);
+    }
     let repo = Repository::open(&repo_path).map_err(|e| format!("Failed to open repository: {}", e))?;
 
     // Get current branch
@@ -78,12 +129,17 @@ pub fn git_status(repo_path: String) -> Result<GitStatus, String> {
         });
     }
 
-    Ok(GitStatus {
+    let result = GitStatus {
         branch,
         ahead,
         behind,
         files,
-    })
+    };
+
+    // Cache the result
+    set_cached_status(&repo_path, result.clone());
+
+    Ok(result)
 }
 
 #[tauri::command]
@@ -126,6 +182,7 @@ pub fn git_stage(repo_path: String, file_path: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to stage file: {}", e))?;
     index.write().map_err(|e| format!("Failed to write index: {}", e))?;
 
+    invalidate_cache(&repo_path);
     Ok(())
 }
 
@@ -141,6 +198,7 @@ pub fn git_unstage(repo_path: String, file_path: String) -> Result<(), String> {
     repo.reset_default(Some(&head_commit.into_object()), &[std::path::Path::new(&file_path)])
         .map_err(|e| format!("Failed to unstage file: {}", e))?;
 
+    invalidate_cache(&repo_path);
     Ok(())
 }
 
@@ -162,5 +220,92 @@ pub fn git_commit(repo_path: String, message: String) -> Result<(), String> {
     repo.commit(Some("HEAD"), &sig, &sig, &message, &tree, &parents)
         .map_err(|e| format!("Failed to commit: {}", e))?;
 
+    invalidate_cache(&repo_path);
     Ok(())
+}
+
+#[tauri::command]
+pub fn git_init(repo_path: String) -> Result<(), String> {
+    Repository::init(&repo_path)
+        .map_err(|e| format!("Failed to initialize repository: {}", e))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_discard(repo_path: String, file_path: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| format!("Failed to open repository: {}", e))?;
+
+    // Check if file is untracked
+    let mut opts = StatusOptions::new();
+    opts.pathspec(&file_path);
+    let statuses = repo.statuses(Some(&mut opts))
+        .map_err(|e| format!("Failed to get status: {}", e))?;
+
+    if let Some(entry) = statuses.iter().next() {
+        if entry.status().is_wt_new() {
+            // Untracked file - delete it
+            let full_path = Path::new(&repo_path).join(&file_path);
+            std::fs::remove_file(&full_path)
+                .map_err(|e| format!("Failed to delete untracked file: {}", e))?;
+            return Ok(());
+        }
+    }
+
+    // Tracked file - checkout from HEAD
+    let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let commit = head.peel_to_commit().map_err(|e| format!("Failed to get commit: {}", e))?;
+    let tree = commit.tree().map_err(|e| format!("Failed to get tree: {}", e))?;
+
+    repo.checkout_tree(
+        tree.as_object(),
+        Some(git2::build::CheckoutBuilder::new()
+            .force()
+            .path(&file_path))
+    ).map_err(|e| format!("Failed to checkout file: {}", e))?;
+
+    invalidate_cache(&repo_path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_stage_all(repo_path: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| format!("Failed to open repository: {}", e))?;
+
+    let mut index = repo.index().map_err(|e| format!("Failed to get index: {}", e))?;
+    index.add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        .map_err(|e| format!("Failed to stage all: {}", e))?;
+    index.write().map_err(|e| format!("Failed to write index: {}", e))?;
+
+    invalidate_cache(&repo_path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_unstage_all(repo_path: String) -> Result<(), String> {
+    let repo = Repository::open(&repo_path).map_err(|e| format!("Failed to open repository: {}", e))?;
+
+    let head = repo.head().map_err(|e| format!("Failed to get HEAD: {}", e))?;
+    let head_commit = head.peel_to_commit().map_err(|e| format!("Failed to get HEAD commit: {}", e))?;
+
+    repo.reset_default(Some(&head_commit.into_object()), std::iter::empty::<&Path>())
+        .map_err(|e| format!("Failed to unstage all: {}", e))?;
+
+    invalidate_cache(&repo_path);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn git_is_repo(path: String) -> bool {
+    Repository::open(&path).is_ok()
+}
+
+#[tauri::command]
+pub fn git_invalidate_cache(repo_path: String) {
+    invalidate_cache(&repo_path);
+}
+
+#[tauri::command]
+pub fn git_status_fresh(repo_path: String) -> Result<GitStatus, String> {
+    invalidate_cache(&repo_path);
+    git_status(repo_path)
 }

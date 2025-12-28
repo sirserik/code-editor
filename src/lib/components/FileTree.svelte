@@ -1,6 +1,6 @@
 <script lang="ts">
   import { fileTreeStore, filesStore, activeFilePathStore, getLanguageFromPath, projectRootStore } from "$lib/stores/files";
-  import { readFile, listDirectory, deleteFile, renameFile, createFile, createDirectory, confirmDialog, messageDialog } from "$lib/utils/ipc";
+  import { readFileSmart, listDirectory, deleteFile, renameFile, createFile, createDirectory, confirmDialog, messageDialog } from "$lib/utils/ipc";
   import type { FileEntry } from "$lib/stores/files";
   import ContextMenu from "./ContextMenu.svelte";
   import FileIcon from "./FileIcon.svelte";
@@ -8,12 +8,21 @@
   import NewFolderDialog from "./NewFolderDialog.svelte";
   import RenameDialog from "./RenameDialog.svelte";
 
+  // Virtual scrolling constants
+  const ITEM_HEIGHT = 28;
+  const OVERSCAN = 5; // Extra items to render above/below viewport
+
   let contextMenu = $state<{ x: number; y: number; entry: FileEntry } | null>(null);
   let showNewFileDialog = $state(false);
   let showNewFolderDialog = $state(false);
   let showRenameDialog = $state(false);
   let newItemPath = $state("");
   let renameEntry = $state<FileEntry | null>(null);
+
+  // Virtual scroll state
+  let scrollContainer: HTMLDivElement;
+  let scrollTop = $state(0);
+  let containerHeight = $state(400);
 
   async function handleFileClick(entry: FileEntry) {
     if (entry.isDirectory) {
@@ -31,14 +40,18 @@
       }
     } else {
       try {
-        const content = await readFile(entry.path);
+        const result = await readFileSmart(entry.path);
         filesStore.openFile({
           path: entry.path,
           name: entry.name,
-          content,
+          content: result.content,
           language: getLanguageFromPath(entry.path),
           isDirty: false,
           cursorPosition: { line: 1, column: 1 },
+          isPartial: result.is_partial,
+          totalLines: result.total_lines,
+          loadedLines: result.loaded_lines,
+          totalSize: result.total_size,
         });
         activeFilePathStore.set(entry.path);
       } catch (err) {
@@ -214,9 +227,38 @@
   }
 
   let flatItems = $derived(flattenTree($fileTreeStore));
+
+  // Virtual scrolling calculations
+  let totalHeight = $derived(flatItems.length * ITEM_HEIGHT);
+  let startIndex = $derived(Math.max(0, Math.floor(scrollTop / ITEM_HEIGHT) - OVERSCAN));
+  let endIndex = $derived(Math.min(flatItems.length, Math.ceil((scrollTop + containerHeight) / ITEM_HEIGHT) + OVERSCAN));
+  let visibleItems = $derived(flatItems.slice(startIndex, endIndex));
+  let offsetY = $derived(startIndex * ITEM_HEIGHT);
+
+  function handleScroll(e: Event) {
+    const target = e.target as HTMLDivElement;
+    scrollTop = target.scrollTop;
+  }
+
+  function updateContainerHeight() {
+    if (scrollContainer) {
+      containerHeight = scrollContainer.clientHeight;
+    }
+  }
+
+  $effect(() => {
+    if (scrollContainer) {
+      updateContainerHeight();
+      const resizeObserver = new ResizeObserver(() => {
+        updateContainerHeight();
+      });
+      resizeObserver.observe(scrollContainer);
+      return () => resizeObserver.disconnect();
+    }
+  });
 </script>
 
-<div class="file-tree">
+<div class="file-tree" bind:this={scrollContainer} onscroll={handleScroll}>
   {#if $fileTreeStore.length === 0}
     <div class="empty-state">
       <p>No folder opened</p>
@@ -227,31 +269,35 @@
       {#if $projectRootStore}
         <div class="root-name">{$projectRootStore.split("/").pop()}</div>
       {/if}
-      {#each flatItems as {entry, depth, isLast, guides}}
-        <div
-          class="tree-item"
-          class:directory={entry.isDirectory}
-          class:file={!entry.isDirectory}
-          class:active={$activeFilePathStore === entry.path}
-          onclick={() => handleFileClick(entry)}
-          oncontextmenu={(e) => handleContextMenu(e, entry)}
-          onkeydown={(e) => e.key === "Enter" && handleFileClick(entry)}
-          role="treeitem"
-          aria-selected={$activeFilePathStore === entry.path}
-          tabindex="0"
-        >
-          <div class="indent-guides">
-            {#each guides as hasLine}
-              <span class="guide" class:has-line={hasLine}></span>
-            {/each}
-            {#if depth > 0}
-              <span class="guide connector" class:last={isLast}></span>
-            {/if}
-          </div>
-          <FileIcon name={entry.name} isDirectory={entry.isDirectory} isExpanded={entry.isExpanded} size={20} />
-          <span class="name truncate">{entry.name}</span>
+      <div class="virtual-scroll-container" style="height: {totalHeight}px; position: relative;">
+        <div class="virtual-scroll-content" style="transform: translateY({offsetY}px);">
+          {#each visibleItems as {entry, depth, isLast, guides}}
+            <div
+              class="tree-item"
+              class:directory={entry.isDirectory}
+              class:file={!entry.isDirectory}
+              class:active={$activeFilePathStore === entry.path}
+              onclick={() => handleFileClick(entry)}
+              oncontextmenu={(e) => handleContextMenu(e, entry)}
+              onkeydown={(e) => e.key === "Enter" && handleFileClick(entry)}
+              role="treeitem"
+              aria-selected={$activeFilePathStore === entry.path}
+              tabindex="0"
+            >
+              <div class="indent-guides">
+                {#each guides as hasLine}
+                  <span class="guide" class:has-line={hasLine}></span>
+                {/each}
+                {#if depth > 0}
+                  <span class="guide connector" class:last={isLast}></span>
+                {/if}
+              </div>
+              <FileIcon name={entry.name} isDirectory={entry.isDirectory} isExpanded={entry.isExpanded} size={20} />
+              <span class="name truncate">{entry.name}</span>
+            </div>
+          {/each}
         </div>
-      {/each}
+      </div>
     </div>
   {/if}
 </div>
@@ -398,5 +444,13 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .virtual-scroll-container {
+    will-change: transform;
+  }
+
+  .virtual-scroll-content {
+    will-change: transform;
   }
 </style>
