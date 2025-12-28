@@ -1,12 +1,69 @@
-import { EditorState, type Extension, Compartment } from "@codemirror/state";
+import { EditorState, type Extension, Compartment, EditorSelection } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentWithTab, copyLineDown, copyLineUp, moveLineDown, moveLineUp } from "@codemirror/commands";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from "@codemirror/language";
+import { foldGutter, indentOnInput, bracketMatching, foldKeymap, syntaxTree } from "@codemirror/language";
 import { getLanguageExtension } from "./languages";
 import { getThemeExtension } from "./themes";
 import type { Settings } from "../stores/settings";
+
+// Custom command: Jump to matching bracket
+function goToMatchingBracket(view: EditorView): boolean {
+  const pos = view.state.selection.main.head;
+  const tree = syntaxTree(view.state);
+  const node = tree.resolveInner(pos, -1);
+
+  // Check if we're at a bracket
+  const brackets: Record<string, string> = {
+    '(': ')', ')': '(',
+    '[': ']', ']': '[',
+    '{': '}', '}': '{'
+  };
+
+  const char = view.state.doc.sliceString(pos, pos + 1);
+  const prevChar = view.state.doc.sliceString(pos - 1, pos);
+
+  if (brackets[char] || brackets[prevChar]) {
+    // Use CodeMirror's built-in bracket matching
+    const match = view.state.doc.toString();
+    const openBrackets = '([{';
+    const closeBrackets = ')]}';
+
+    const searchPos = brackets[char] ? pos : pos - 1;
+    const searchChar = brackets[char] ? char : prevChar;
+    const isOpen = openBrackets.includes(searchChar);
+    const matchChar = brackets[searchChar];
+
+    let depth = 0;
+    if (isOpen) {
+      for (let i = searchPos; i < match.length; i++) {
+        if (match[i] === searchChar) depth++;
+        if (match[i] === matchChar) depth--;
+        if (depth === 0) {
+          view.dispatch({
+            selection: EditorSelection.cursor(i + 1),
+            scrollIntoView: true
+          });
+          return true;
+        }
+      }
+    } else {
+      for (let i = searchPos; i >= 0; i--) {
+        if (match[i] === searchChar) depth++;
+        if (match[i] === matchChar) depth--;
+        if (depth === 0) {
+          view.dispatch({
+            selection: EditorSelection.cursor(i),
+            scrollIntoView: true
+          });
+          return true;
+        }
+      }
+    }
+  }
+  return false;
+}
 
 // Compartment for dynamic font size updates
 export const fontSizeCompartment = new Compartment();
@@ -63,6 +120,13 @@ export function createEditorState(
 
     // Keymaps
     keymap.of([
+      // PhpStorm-like keybindings
+      { key: "Mod-d", run: copyLineDown },           // Duplicate line down
+      { key: "Mod-Shift-d", run: copyLineUp },       // Duplicate line up
+      { key: "Alt-ArrowUp", run: moveLineUp },       // Move line up
+      { key: "Alt-ArrowDown", run: moveLineDown },   // Move line down
+      { key: "Mod-Shift-m", run: goToMatchingBracket }, // Jump to matching bracket
+      { key: "Ctrl-m", mac: "Ctrl-m", run: goToMatchingBracket }, // Alternative
       ...closeBracketsKeymap,
       ...defaultKeymap,
       ...searchKeymap,

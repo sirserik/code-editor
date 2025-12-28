@@ -10,6 +10,7 @@
   import GoToLine from "$lib/components/GoToLine.svelte";
   import GlobalSearch from "$lib/components/GlobalSearch.svelte";
   import NewFileDialog from "$lib/components/NewFileDialog.svelte";
+  import CloseProjectDialog from "$lib/components/CloseProjectDialog.svelte";
   import { filesStore, activeFileStore, activeFilePathStore, fileTreeStore, projectRootStore, getLanguageFromPath } from "$lib/stores/files";
   import { settingsStore } from "$lib/stores/settings";
   import { setupKeybindings } from "$lib/utils/keybindings";
@@ -22,6 +23,7 @@
   let showGoToLine = $state(false);
   let showGlobalSearch = $state(false);
   let showNewFileDialog = $state(false);
+  let showCloseProjectDialog = $state(false);
   let sidebarWidth = $state(250);
   let showSidebar = $state(true);
 
@@ -101,24 +103,31 @@
     }
   }
 
-  async function handleCloseProject() {
+  function handleCloseProject() {
     const dirtyFiles = $filesStore.filter(f => f.isDirty);
 
     if (dirtyFiles.length > 0) {
-      const shouldSave = await confirmDialog(
-        "Unsaved Changes",
-        `You have ${dirtyFiles.length} unsaved file(s). Save all before closing?`
-      );
-
-      if (shouldSave) {
-        await handleSaveAll();
-      }
+      showCloseProjectDialog = true;
+    } else {
+      doCloseProject();
     }
+  }
 
+  function doCloseProject() {
     filesStore.closeAll();
     fileTreeStore.setTree([]);
     projectRootStore.set(null);
     activeFilePathStore.set(null);
+    showCloseProjectDialog = false;
+  }
+
+  async function handleCloseProjectSaveAll() {
+    await handleSaveAll();
+    doCloseProject();
+  }
+
+  function handleCloseProjectDontSave() {
+    doCloseProject();
   }
 
   async function handleSaveAll() {
@@ -301,6 +310,14 @@
   {#if showNewFileDialog}
     <NewFileDialog onClose={() => { showNewFileDialog = false; refreshFileTree(); }} />
   {/if}
+
+  <CloseProjectDialog
+    show={showCloseProjectDialog}
+    dirtyFiles={$filesStore.filter(f => f.isDirty)}
+    onSaveAll={handleCloseProjectSaveAll}
+    onDontSave={handleCloseProjectDontSave}
+    onCancel={() => { showCloseProjectDialog = false; }}
+  />
 </div>
 
 <style>

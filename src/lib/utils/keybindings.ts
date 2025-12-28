@@ -63,6 +63,7 @@ export function setupKeybindings(handlers: KeybindingHandlers) {
     // Cmd/Ctrl + W - Close Tab
     if (e[modKey] && key === "w" && !e.shiftKey) {
       e.preventDefault();
+      e.stopImmediatePropagation();
       handlers.onCloseTab?.();
       return;
     }

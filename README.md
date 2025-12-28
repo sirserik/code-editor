@@ -82,6 +82,7 @@ The built app will be in `src-tauri/target/release/bundle/`.
 
 ## Keyboard Shortcuts
 
+### General
 | Action | macOS | Windows/Linux |
 |--------|-------|---------------|
 | New File | `Cmd+N` | `Ctrl+N` |
@@ -89,6 +90,7 @@ The built app will be in `src-tauri/target/release/bundle/`.
 | Open Folder | `Cmd+Shift+O` | `Ctrl+Shift+O` |
 | Save | `Cmd+S` | `Ctrl+S` |
 | Close Tab | `Cmd+W` | `Ctrl+W` |
+| Close Project | `Cmd+Shift+W` | `Ctrl+Shift+W` |
 | Quick Open | `Cmd+P` | `Ctrl+P` |
 | Command Palette | `Cmd+Shift+P` | `Ctrl+Shift+P` |
 | Find in File | `Cmd+F` | `Ctrl+F` |
@@ -99,6 +101,14 @@ The built app will be in `src-tauri/target/release/bundle/`.
 | Zoom In | `Cmd+=` | `Ctrl+=` |
 | Zoom Out | `Cmd+-` | `Ctrl+-` |
 | Reset Zoom | `Cmd+0` | `Ctrl+0` |
+
+### Editor (PhpStorm-like)
+| Action | macOS | Windows/Linux |
+|--------|-------|---------------|
+| Duplicate Line | `Cmd+D` | `Ctrl+D` |
+| Move Line Up | `Alt+Up` | `Alt+Up` |
+| Move Line Down | `Alt+Down` | `Alt+Down` |
+| Jump to Matching Bracket | `Cmd+Shift+M` | `Ctrl+Shift+M` |
 
 ## Tech Stack
 
