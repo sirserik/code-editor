@@ -7,7 +7,7 @@
   import { filesStore, searchHighlightStore, projectRootStore } from "$lib/stores/files";
   import type { OpenFile } from "$lib/stores/files";
   import { writeFile, messageDialog } from "$lib/utils/ipc";
-  import { ensureLspStarted, notifyFileOpen, debouncedNotifyFileChange, createLspCompletionSource } from "$lib/codemirror/lsp-completion";
+  import { ensureLspStarted, notifyFileOpen, debouncedNotifyFileChange, createLspCompletionSource, createEmmetTabExpansion } from "$lib/codemirror/lsp-completion";
 
   interface Props {
     file: OpenFile;
@@ -82,6 +82,9 @@
     content: view?.state.doc.toString() || file.content,
   }));
 
+  // Create Emmet Tab expansion extension
+  const emmetExtension = createEmmetTabExpansion(file.language);
+
   async function handleSave() {
     try {
       const contentToSave = view?.state.doc.toString() || file.content;
@@ -127,6 +130,7 @@
       onCursorChange: handleCursorChange,
       onDirty: handleDirty,
       completionSource: lspCompletionSource,
+      emmetExtension: emmetExtension,
     });
 
     // Add highlight field extension

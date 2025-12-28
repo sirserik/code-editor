@@ -1,4 +1,5 @@
-import { autocompletion, type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
+import { EditorView, keymap } from "@codemirror/view";
 import { lspGetCompletions, lspOpenFile, lspUpdateFile, lspStart, emmetExpand, type CompletionResult as LspCompletion } from "../utils/ipc";
 
 // Track which language servers are started
@@ -147,19 +148,21 @@ export function createLspCompletionSource(
     }
 
     // Try Emmet expansion for HTML-like languages
-    if (EMMET_LANGUAGES.includes(language) && word) {
-      const abbr = word.text;
+    // Match Emmet patterns including those starting with . or #
+    const emmetWord = context.matchBefore(/[a-zA-Z.#][a-zA-Z0-9.#>+*\[\]{}$@^()-]*/);
+    if (EMMET_LANGUAGES.includes(language) && emmetWord) {
+      const abbr = emmetWord.text;
       // Only try Emmet for patterns that look like abbreviations
-      if (/^[a-z][a-z0-9#.>+*\[\]{}]*$/i.test(abbr) && abbr.length >= 2) {
+      if (/^[a-zA-Z.#][a-zA-Z0-9.#>+*\[\]{}$@^()-]*$/.test(abbr) && abbr.length >= 2) {
         try {
           const expanded = await emmetExpand(abbr, language);
-          if (expanded && expanded !== abbr) {
+          if (expanded && expanded !== abbr && expanded.includes('<')) {
             results.push({
-              label: `${abbr} (Emmet)`,
+              label: `${abbr} → Emmet`,
               type: "snippet",
-              detail: "Emmet abbreviation",
+              detail: expanded.split('\n')[0].substring(0, 50),
               apply: expanded,
-              boost: 2, // Prioritize Emmet
+              boost: 10, // High priority for Emmet
             });
           }
         } catch (e) {
@@ -172,10 +175,16 @@ export function createLspCompletionSource(
       return null;
     }
 
+    // Use the earliest position (emmet might match more)
+    const from = Math.min(
+      word?.from ?? pos,
+      emmetWord?.from ?? pos
+    );
+
     return {
-      from: word?.from ?? pos,
+      from,
       options: results,
-      validFor: /^[\w$]*$/,
+      validFor: /^[\w.#>+*\[\]{}$@^()-]*$/,
     };
   };
 }
@@ -190,4 +199,48 @@ export function debouncedNotifyFileChange(language: string, path: string, conten
   updateTimeout = setTimeout(() => {
     notifyFileChange(language, path, content);
   }, 500);
+}
+
+// Emmet Tab expansion command
+export function createEmmetTabExpansion(language: string) {
+  return EditorView.domEventHandlers({
+    keydown(event, view) {
+      if (event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.metaKey) {
+        return false;
+      }
+
+      // Only for HTML-like languages
+      if (!EMMET_LANGUAGES.includes(language)) {
+        return false;
+      }
+
+      const pos = view.state.selection.main.head;
+      const line = view.state.doc.lineAt(pos);
+      const textBefore = line.text.slice(0, pos - line.from);
+
+      // Match Emmet abbreviation at the end of the line
+      const match = textBefore.match(/([a-zA-Z.#][a-zA-Z0-9.#>+*\[\]{}$@^()!-]*)$/);
+      if (!match || match[1].length < 2) {
+        return false;
+      }
+
+      const abbr = match[1];
+      const from = pos - abbr.length;
+
+      // Try to expand
+      emmetExpand(abbr, language).then(expanded => {
+        if (expanded && expanded !== abbr && expanded.includes('<')) {
+          view.dispatch({
+            changes: { from, to: pos, insert: expanded },
+            selection: { anchor: from + expanded.length }
+          });
+        }
+      }).catch(() => {});
+
+      // Prevent default tab behavior while we try to expand
+      // If expansion fails, nothing happens (user can press tab again)
+      event.preventDefault();
+      return true;
+    }
+  });
 }

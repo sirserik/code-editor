@@ -104,6 +104,7 @@ export interface EditorSetupOptions {
   onCursorChange?: (line: number, column: number) => void;
   onDirty?: () => void;  // Called immediately when content changes (for dirty flag)
   completionSource?: any;  // Custom completion source for LSP
+  emmetExtension?: any;  // Emmet Tab expansion extension
 }
 
 export function createEditorState(
@@ -193,6 +194,9 @@ export function createEditorState(
         debouncedCursorChange(line.number, pos - line.from + 1);
       }
     }),
+
+    // Emmet Tab expansion (if provided)
+    ...(options.emmetExtension ? [options.emmetExtension] : []),
   ];
 
   return EditorState.create({
