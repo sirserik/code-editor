@@ -13,55 +13,41 @@ import { java } from "@codemirror/lang-java";
 import { cpp } from "@codemirror/lang-cpp";
 
 export function getLanguageExtension(language: string): Extension {
-  console.log("Getting language extension for:", language);
   switch (language) {
     case "javascript":
-      console.log("Using JavaScript");
       return javascript();
     case "typescript":
-      console.log("Using TypeScript");
       return javascript({ typescript: true });
     case "jsx":
       return javascript({ jsx: true });
     case "tsx":
-      console.log("Using TSX");
       return javascript({ typescript: true, jsx: true });
     case "python":
-      console.log("Using Python");
       return python();
     case "rust":
-      console.log("Using Rust");
       return rust();
     case "html":
-      console.log("Using HTML");
       return html();
     case "css":
     case "scss":
     case "less":
-      console.log("Using CSS");
       return css();
     case "json":
-      console.log("Using JSON");
       return json();
     case "markdown":
       return markdown();
     case "sql":
       return sql();
     case "php":
-      console.log("Using PHP");
       return php();
     case "go":
-      console.log("Using Go");
       return go();
     case "java":
-      console.log("Using Java");
       return java();
     case "c":
     case "cpp":
-      console.log("Using C/C++");
       return cpp();
     default:
-      console.log("No language extension for:", language);
       return [];
   }
 }

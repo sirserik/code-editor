@@ -191,7 +191,5 @@ export function getLanguageFromPath(path: string): string {
     hpp: "cpp",
     hxx: "cpp",
   };
-  const lang = languageMap[ext] || "text";
-  console.log("Language for", path, "->", lang);
-  return lang;
+  return languageMap[ext] || "text";
 }

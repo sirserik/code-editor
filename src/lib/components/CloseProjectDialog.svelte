@@ -16,9 +16,11 @@
 
     if (e.key === "Escape") {
       e.preventDefault();
+      e.stopPropagation();
       onCancel();
     } else if (e.key === "Enter") {
       e.preventDefault();
+      e.stopPropagation();
       onSaveAll();
     }
   }
