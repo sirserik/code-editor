@@ -201,16 +201,18 @@ export function debouncedNotifyFileChange(language: string, path: string, conten
   }, 500);
 }
 
-// Emmet Tab expansion command
+// Emmet Tab expansion - synchronous check, async expand
 export function createEmmetTabExpansion(language: string) {
-  return EditorView.domEventHandlers({
-    keydown(event, view) {
-      if (event.key !== "Tab" || event.shiftKey || event.ctrlKey || event.metaKey) {
+  return keymap.of([{
+    key: "Tab",
+    run: (view) => {
+      // Only for HTML-like languages
+      if (!EMMET_LANGUAGES.includes(language)) {
         return false;
       }
 
-      // Only for HTML-like languages
-      if (!EMMET_LANGUAGES.includes(language)) {
+      // Don't expand if there's a selection
+      if (!view.state.selection.main.empty) {
         return false;
       }
 
@@ -227,7 +229,7 @@ export function createEmmetTabExpansion(language: string) {
       const abbr = match[1];
       const from = pos - abbr.length;
 
-      // Try to expand
+      // Expand synchronously by blocking (not ideal but works for Tab)
       emmetExpand(abbr, language).then(expanded => {
         if (expanded && expanded !== abbr && expanded.includes('<')) {
           view.dispatch({
@@ -237,10 +239,7 @@ export function createEmmetTabExpansion(language: string) {
         }
       }).catch(() => {});
 
-      // Prevent default tab behavior while we try to expand
-      // If expansion fails, nothing happens (user can press tab again)
-      event.preventDefault();
-      return true;
+      return true; // Consume Tab key
     }
-  });
+  }]);
 }

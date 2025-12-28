@@ -80,7 +80,13 @@ const darkTheme = EditorView.theme(
       borderLeftWidth: "2px",
     },
     "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection": {
-      backgroundColor: tokyoNight.selection,
+      backgroundColor: "#264f78 !important",
+    },
+    ".cm-selectionLayer .cm-selectionBackground": {
+      backgroundColor: "#264f78 !important",
+    },
+    "::selection": {
+      backgroundColor: "#264f78 !important",
     },
     ".cm-panels": {
       backgroundColor: tokyoNight.bgDark,
