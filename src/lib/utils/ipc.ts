@@ -469,3 +469,141 @@ export async function searchStreamingStart(
 export async function searchStreamingCancel(searchId: number): Promise<void> {
   return invoke("search_streaming_cancel", { searchId });
 }
+
+// ============================================
+// FIND AND REPLACE
+// ============================================
+
+export interface ReplaceMatch {
+  line: number;
+  column: number;
+  length: number;
+  text: string;
+  line_content: string;
+}
+
+export interface FindResult {
+  matches: ReplaceMatch[];
+  total_count: number;
+}
+
+export interface ReplaceResult {
+  replaced_count: number;
+  new_content: string;
+}
+
+export async function findInContent(
+  content: string,
+  query: string,
+  caseSensitive: boolean = false,
+  useRegex: boolean = false,
+  wholeWord: boolean = false
+): Promise<FindResult> {
+  return invoke<FindResult>("find_in_content", {
+    content,
+    query,
+    caseSensitive,
+    useRegex,
+    wholeWord,
+  });
+}
+
+export async function replaceInContent(
+  content: string,
+  query: string,
+  replacement: string,
+  caseSensitive: boolean = false,
+  useRegex: boolean = false,
+  wholeWord: boolean = false
+): Promise<ReplaceResult> {
+  return invoke<ReplaceResult>("replace_in_content", {
+    content,
+    query,
+    replacement,
+    caseSensitive,
+    useRegex,
+    wholeWord,
+  });
+}
+
+export async function replaceSingle(
+  content: string,
+  line: number,
+  column: number,
+  length: number,
+  replacement: string
+): Promise<string> {
+  return invoke<string>("replace_single", {
+    content,
+    line,
+    column,
+    length,
+    replacement,
+  });
+}
+
+// ============================================
+// LSP: GO TO DEFINITION, HOVER, FORMAT
+// ============================================
+
+export interface LocationResult {
+  path: string;
+  line: number;
+  column: number;
+  end_line: number;
+  end_column: number;
+}
+
+export interface HoverResult {
+  contents: string;
+  range: RangeResult | null;
+}
+
+export interface RangeResult {
+  start_line: number;
+  start_column: number;
+  end_line: number;
+  end_column: number;
+}
+
+export async function lspGoToDefinition(
+  language: string,
+  path: string,
+  line: number,
+  column: number
+): Promise<LocationResult | null> {
+  return invoke<LocationResult | null>("lsp_go_to_definition", {
+    language,
+    path,
+    line,
+    column,
+  });
+}
+
+export async function lspHover(
+  language: string,
+  path: string,
+  line: number,
+  column: number
+): Promise<HoverResult | null> {
+  return invoke<HoverResult | null>("lsp_hover", {
+    language,
+    path,
+    line,
+    column,
+  });
+}
+
+export async function lspFormatDocument(
+  language: string,
+  path: string,
+  tabSize: number = 2,
+  insertSpaces: boolean = true
+): Promise<TextEdit[]> {
+  return invoke<TextEdit[]>("lsp_format_document", {
+    language,
+    path,
+    tabSize,
+    insertSpaces,
+  });
+}

@@ -1,6 +1,6 @@
 import { type CompletionContext, type CompletionResult } from "@codemirror/autocomplete";
-import { EditorView, keymap } from "@codemirror/view";
-import { lspGetCompletions, lspOpenFile, lspUpdateFile, lspStart, emmetExpand, type CompletionResult as LspCompletion } from "../utils/ipc";
+import { EditorView, keymap, hoverTooltip, type Tooltip } from "@codemirror/view";
+import { lspGetCompletions, lspOpenFile, lspUpdateFile, lspStart, emmetExpand, lspHover, type CompletionResult as LspCompletion } from "../utils/ipc";
 
 // Track which language servers are started
 const startedServers = new Set<string>();
@@ -242,4 +242,61 @@ export function createEmmetTabExpansion(language: string) {
       return true; // Consume Tab key
     }
   }]);
+}
+
+// LSP Hover tooltip
+export function createLspHoverExtension(
+  getFileInfo: () => { path: string; language: string }
+) {
+  return hoverTooltip(async (view, pos): Promise<Tooltip | null> => {
+    const { path, language } = getFileInfo();
+
+    if (!LSP_LANGUAGES.includes(language)) {
+      return null;
+    }
+
+    const lspLanguage = getLspLanguage(language);
+    if (!startedServers.has(lspLanguage)) {
+      return null;
+    }
+
+    const line = view.state.doc.lineAt(pos);
+    const lineNumber = line.number - 1; // LSP uses 0-based
+    const column = pos - line.from;
+
+    try {
+      const hover = await lspHover(lspLanguage, path, lineNumber, column);
+      if (!hover || !hover.contents) {
+        return null;
+      }
+
+      // Create tooltip element
+      return {
+        pos,
+        above: true,
+        create() {
+          const dom = document.createElement("div");
+          dom.className = "cm-lsp-hover";
+
+          // Parse markdown-like content
+          const content = hover.contents;
+
+          // Handle code blocks
+          const formatted = content
+            .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre class="hover-code">$2</pre>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>')
+            .replace(/\n\n/g, '<br><br>')
+            .replace(/\n/g, '<br>');
+
+          dom.innerHTML = formatted;
+          return { dom };
+        }
+      };
+    } catch (e) {
+      return null;
+    }
+  }, {
+    hideOnChange: true,
+    hoverTime: 300,
+  });
 }

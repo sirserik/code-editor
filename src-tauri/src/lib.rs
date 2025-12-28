@@ -32,6 +32,10 @@ pub fn run() {
             // Streaming search
             file::search_streaming_start,
             file::search_streaming_cancel,
+            // Find and Replace
+            file::find_in_content,
+            file::replace_in_content,
+            file::replace_single,
             // Git commands
             git::git_status,
             git::git_diff,
@@ -64,6 +68,9 @@ pub fn run() {
             lsp::lsp_open_file,
             lsp::lsp_update_file,
             lsp::lsp_get_completions,
+            lsp::lsp_go_to_definition,
+            lsp::lsp_hover,
+            lsp::lsp_format_document,
             lsp::emmet_expand,
             // Terminal commands
             terminal::terminal_spawn,

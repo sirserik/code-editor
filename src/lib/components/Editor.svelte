@@ -1,13 +1,14 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { EditorView, Decoration, type DecorationSet } from "@codemirror/view";
+  import { EditorView, Decoration, type DecorationSet, hoverTooltip, type Tooltip } from "@codemirror/view";
   import { StateField, StateEffect } from "@codemirror/state";
   import { createEditorState, fontSizeCompartment, createFontSizeExtension, loadLanguageAsync, updateTheme } from "$lib/codemirror/setup";
   import { settingsStore } from "$lib/stores/settings";
-  import { filesStore, searchHighlightStore, projectRootStore } from "$lib/stores/files";
+  import { filesStore, searchHighlightStore, projectRootStore, activeFilePathStore, getLanguageFromPath } from "$lib/stores/files";
   import type { OpenFile } from "$lib/stores/files";
-  import { writeFile, messageDialog, readFileChunk, readFile } from "$lib/utils/ipc";
-  import { ensureLspStarted, notifyFileOpen, debouncedNotifyFileChange, createLspCompletionSource, createEmmetTabExpansion } from "$lib/codemirror/lsp-completion";
+  import { writeFile, messageDialog, readFileChunk, readFile, readFileSmart, lspGoToDefinition, lspHover, lspFormatDocument } from "$lib/utils/ipc";
+  import { ensureLspStarted, notifyFileOpen, debouncedNotifyFileChange, createLspCompletionSource, createEmmetTabExpansion, createLspHoverExtension } from "$lib/codemirror/lsp-completion";
+  import FindReplace from "./FindReplace.svelte";
 
   interface Props {
     file: OpenFile;
@@ -17,6 +18,7 @@
 
   let editorContainer: HTMLDivElement;
   let view: EditorView | null = null;
+  let showFindReplace = $state(false);
 
   // Effect to set search highlights
   const setSearchHighlight = StateEffect.define<string>();
@@ -85,6 +87,12 @@
   // Create Emmet Tab expansion extension
   const emmetExtension = createEmmetTabExpansion(file.language);
 
+  // Create LSP Hover extension
+  const hoverExtension = createLspHoverExtension(() => ({
+    path: file.path,
+    language: file.language,
+  }));
+
   async function handleSave() {
     try {
       const contentToSave = view?.state.doc.toString() || file.content;
@@ -115,6 +123,118 @@
     });
   }
 
+  function scrollToPosition(lineNumber: number, column: number) {
+    if (!view) return;
+
+    const line = view.state.doc.line(Math.min(lineNumber + 1, view.state.doc.lines));
+    const pos = line.from + column;
+
+    view.dispatch({
+      selection: { anchor: pos },
+      scrollIntoView: true,
+      effects: EditorView.scrollIntoView(pos, { y: "center" }),
+    });
+
+    view.focus();
+  }
+
+  // Go to Definition
+  async function goToDefinition() {
+    if (!view) return;
+
+    const pos = view.state.selection.main.head;
+    const line = view.state.doc.lineAt(pos);
+    const lineNumber = line.number - 1; // 0-indexed for LSP
+    const column = pos - line.from;
+
+    try {
+      const result = await lspGoToDefinition(file.language, file.path, lineNumber, column);
+      if (result) {
+        if (result.path === file.path) {
+          // Same file - just scroll
+          scrollToPosition(result.line, result.column);
+        } else {
+          // Different file - open it
+          const content = await readFileSmart(result.path);
+          const name = result.path.split("/").pop() || result.path;
+          filesStore.openFile({
+            path: result.path,
+            name,
+            content: content.content,
+            language: getLanguageFromPath(result.path),
+            isDirty: false,
+            cursorPosition: { line: result.line + 1, column: result.column + 1 },
+            isPartial: content.is_partial,
+            totalLines: content.total_lines,
+            loadedLines: content.loaded_lines,
+            totalSize: content.total_size,
+          });
+          activeFilePathStore.set(result.path);
+        }
+      }
+    } catch (err) {
+      console.debug("Go to definition failed:", err);
+    }
+  }
+
+  // Format Document
+  async function formatDocument() {
+    if (!view) return;
+
+    try {
+      const edits = await lspFormatDocument(
+        file.language,
+        file.path,
+        $settingsStore.tabSize || 2,
+        $settingsStore.insertSpaces !== false
+      );
+
+      if (edits.length > 0) {
+        // Apply edits in reverse order to preserve positions
+        const sortedEdits = [...edits].sort((a, b) => {
+          if (a.start_line !== b.start_line) return b.start_line - a.start_line;
+          return b.start_col - a.start_col;
+        });
+
+        for (const edit of sortedEdits) {
+          const startLine = view.state.doc.line(edit.start_line + 1);
+          const endLine = view.state.doc.line(edit.end_line + 1);
+          const from = startLine.from + edit.start_col;
+          const to = endLine.from + edit.end_col;
+
+          view.dispatch({
+            changes: { from, to, insert: edit.new_text },
+          });
+        }
+
+        filesStore.markDirty(file.path);
+      }
+    } catch (err) {
+      console.debug("Format failed:", err);
+    }
+  }
+
+  // Handle content change from Find & Replace
+  function handleContentChange(newContent: string) {
+    if (!view) return;
+
+    view.dispatch({
+      changes: {
+        from: 0,
+        to: view.state.doc.length,
+        insert: newContent,
+      },
+    });
+
+    filesStore.updateContent(file.path, newContent);
+    filesStore.markDirty(file.path);
+  }
+
+  // Navigate to match from Find & Replace
+  function handleNavigateToMatch(line: number, column: number) {
+    scrollToPosition(line, column);
+  }
+
   onMount(async () => {
     // Start LSP server if available
     const workspaceRoot = $projectRootStore;
@@ -131,6 +251,7 @@
       onDirty: handleDirty,
       completionSource: lspCompletionSource,
       emmetExtension: emmetExtension,
+      hoverExtension: hoverExtension,
     });
 
     // Add highlight field extension
@@ -159,20 +280,45 @@
       setTimeout(() => scrollToLine(file.cursorPosition.line), 50);
     }
 
-    // Add save keybinding
+    // Add keyboard shortcuts
     const handleKeydown = (e: KeyboardEvent) => {
       const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
       const modKey = isMac ? e.metaKey : e.ctrlKey;
+
+      // Save (Cmd+S)
       if (modKey && e.key === "s") {
         e.preventDefault();
         handleSave();
       }
-      // Clear highlights on Escape
-      if (e.key === "Escape" && view) {
-        searchHighlightStore.set("");
-        view.dispatch({
-          effects: setSearchHighlight.of(""),
-        });
+
+      // Find (Cmd+F)
+      if (modKey && e.key === "f" && !e.shiftKey) {
+        e.preventDefault();
+        showFindReplace = true;
+      }
+
+      // Go to Definition (F12)
+      if (e.key === "F12") {
+        e.preventDefault();
+        goToDefinition();
+      }
+
+      // Format Document (Alt+Shift+F)
+      if (e.altKey && e.shiftKey && e.key === "f") {
+        e.preventDefault();
+        formatDocument();
+      }
+
+      // Clear highlights and close Find on Escape
+      if (e.key === "Escape") {
+        if (showFindReplace) {
+          showFindReplace = false;
+        } else if (view) {
+          searchHighlightStore.set("");
+          view.dispatch({
+            effects: setSearchHighlight.of(""),
+          });
+        }
       }
     };
 
@@ -297,6 +443,15 @@
 </script>
 
 <div class="editor-container">
+  {#if showFindReplace}
+    <FindReplace
+      content={view?.state.doc.toString() || file.content}
+      onContentChange={handleContentChange}
+      onNavigateToMatch={handleNavigateToMatch}
+      onClose={() => showFindReplace = false}
+    />
+  {/if}
+
   <div class="editor-wrapper" bind:this={editorContainer}></div>
 
   {#if file.isPartial}

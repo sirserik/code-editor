@@ -132,6 +132,7 @@ export interface EditorSetupOptions {
   onDirty?: () => void;  // Called immediately when content changes (for dirty flag)
   completionSource?: any;  // Custom completion source for LSP
   emmetExtension?: any;  // Emmet Tab expansion extension
+  hoverExtension?: any;  // LSP Hover tooltip extension
 }
 
 export function createEditorState(
@@ -227,6 +228,9 @@ export function createEditorState(
 
     // Emmet Tab expansion (if provided)
     ...(options.emmetExtension ? [options.emmetExtension] : []),
+
+    // LSP Hover tooltip (if provided)
+    ...(options.hoverExtension ? [options.hoverExtension] : []),
   ];
 
   return EditorState.create({

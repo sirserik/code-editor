@@ -206,3 +206,40 @@ input:focus, textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* LSP Hover Tooltip */
+.cm-tooltip.cm-tooltip-hover {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-width: 600px;
+  max-height: 400px;
+  overflow: auto;
+}
+
+.cm-lsp-hover {
+  padding: 8px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.cm-lsp-hover code {
+  background: var(--bg-primary);
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.cm-lsp-hover pre.hover-code {
+  background: var(--bg-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+}

@@ -5,6 +5,8 @@ use lsp_types::{
     TextDocumentContentChangeEvent, TextDocumentClientCapabilities,
     CompletionClientCapabilities, CompletionItemCapability,
     WorkspaceClientCapabilities, WorkspaceFolder, DidOpenTextDocumentParams,
+    GotoDefinitionParams, HoverParams, DocumentFormattingParams, FormattingOptions,
+    HoverClientCapabilities, GotoCapability, PublishDiagnosticsClientCapabilities,
 };
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -55,6 +57,47 @@ pub struct LspServerStatus {
     pub status: String, // "running", "stopped", "error"
     pub uptime_secs: u64,
     pub requests_served: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LocationResult {
+    pub path: String,
+    pub line: u32,
+    pub column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HoverResult {
+    pub contents: String,
+    pub range: Option<RangeResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RangeResult {
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticResult {
+    pub path: String,
+    pub line: u32,
+    pub column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+    pub message: String,
+    pub severity: String, // "error", "warning", "info", "hint"
+    pub source: Option<String>,
+    pub code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatResult {
+    pub edits: Vec<TextEdit>,
 }
 
 struct LspServer {
@@ -172,6 +215,18 @@ impl LspManager {
                             snippet_support: Some(true),
                             ..Default::default()
                         }),
+                        ..Default::default()
+                    }),
+                    hover: Some(HoverClientCapabilities {
+                        content_format: Some(vec![lsp_types::MarkupKind::Markdown, lsp_types::MarkupKind::PlainText]),
+                        ..Default::default()
+                    }),
+                    definition: Some(GotoCapability {
+                        link_support: Some(true),
+                        ..Default::default()
+                    }),
+                    publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
+                        related_information: Some(true),
                         ..Default::default()
                     }),
                     ..Default::default()
@@ -386,6 +441,176 @@ impl LspManager {
         }).collect())
     }
 
+    fn go_to_definition(&mut self, language: &str, path: &str, line: u32, column: u32) -> Result<Option<LocationResult>, String> {
+        let server = self.servers.get_mut(language).ok_or("Server not running")?;
+        server.touch();
+
+        let uri = Url::from_file_path(path).map_err(|_| "Invalid path")?;
+        let params = GotoDefinitionParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character: column },
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": next_request_id(),
+            "method": "textDocument/definition",
+            "params": params
+        });
+
+        Self::send_message(&mut server.process, &request)?;
+        let response = Self::read_message(&mut server.process)?;
+
+        let result = response.get("result");
+        if result.is_none() || result.unwrap().is_null() {
+            return Ok(None);
+        }
+
+        // Handle Location or Location[] response
+        let location = match result.unwrap() {
+            Value::Array(arr) if !arr.is_empty() => arr[0].clone(),
+            Value::Object(_) => result.unwrap().clone(),
+            _ => return Ok(None),
+        };
+
+        let uri_str = location.get("uri").and_then(|u| u.as_str()).ok_or("No URI")?;
+        let range = location.get("range").ok_or("No range")?;
+
+        let file_path = Url::parse(uri_str)
+            .map_err(|e| e.to_string())?
+            .to_file_path()
+            .map_err(|_| "Invalid file path")?
+            .to_string_lossy()
+            .to_string();
+
+        Ok(Some(LocationResult {
+            path: file_path,
+            line: range.get("start").and_then(|s| s.get("line")).and_then(|l| l.as_u64()).unwrap_or(0) as u32,
+            column: range.get("start").and_then(|s| s.get("character")).and_then(|c| c.as_u64()).unwrap_or(0) as u32,
+            end_line: range.get("end").and_then(|e| e.get("line")).and_then(|l| l.as_u64()).unwrap_or(0) as u32,
+            end_column: range.get("end").and_then(|e| e.get("character")).and_then(|c| c.as_u64()).unwrap_or(0) as u32,
+        }))
+    }
+
+    fn hover(&mut self, language: &str, path: &str, line: u32, column: u32) -> Result<Option<HoverResult>, String> {
+        let server = self.servers.get_mut(language).ok_or("Server not running")?;
+        server.touch();
+
+        let uri = Url::from_file_path(path).map_err(|_| "Invalid path")?;
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: Position { line, character: column },
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": next_request_id(),
+            "method": "textDocument/hover",
+            "params": params
+        });
+
+        Self::send_message(&mut server.process, &request)?;
+        let response = Self::read_message(&mut server.process)?;
+
+        let result = response.get("result");
+        if result.is_none() || result.unwrap().is_null() {
+            return Ok(None);
+        }
+
+        let hover = result.unwrap();
+        let contents = hover.get("contents");
+        if contents.is_none() {
+            return Ok(None);
+        }
+
+        // Parse contents (can be string, MarkedString, or array)
+        let content_str = match contents.unwrap() {
+            Value::String(s) => s.clone(),
+            Value::Object(obj) => {
+                obj.get("value").and_then(|v| v.as_str()).unwrap_or("").to_string()
+            }
+            Value::Array(arr) => {
+                arr.iter()
+                    .filter_map(|v| match v {
+                        Value::String(s) => Some(s.clone()),
+                        Value::Object(obj) => obj.get("value").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            }
+            _ => return Ok(None),
+        };
+
+        let range = hover.get("range").map(|r| RangeResult {
+            start_line: r.get("start").and_then(|s| s.get("line")).and_then(|l| l.as_u64()).unwrap_or(0) as u32,
+            start_column: r.get("start").and_then(|s| s.get("character")).and_then(|c| c.as_u64()).unwrap_or(0) as u32,
+            end_line: r.get("end").and_then(|e| e.get("line")).and_then(|l| l.as_u64()).unwrap_or(0) as u32,
+            end_column: r.get("end").and_then(|e| e.get("character")).and_then(|c| c.as_u64()).unwrap_or(0) as u32,
+        });
+
+        Ok(Some(HoverResult {
+            contents: content_str,
+            range,
+        }))
+    }
+
+    fn format_document(&mut self, language: &str, path: &str, tab_size: u32, insert_spaces: bool) -> Result<Vec<TextEdit>, String> {
+        let server = self.servers.get_mut(language).ok_or("Server not running")?;
+        server.touch();
+
+        let uri = Url::from_file_path(path).map_err(|_| "Invalid path")?;
+        let params = DocumentFormattingParams {
+            text_document: TextDocumentIdentifier { uri },
+            options: FormattingOptions {
+                tab_size,
+                insert_spaces,
+                ..Default::default()
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        let request = json!({
+            "jsonrpc": "2.0",
+            "id": next_request_id(),
+            "method": "textDocument/formatting",
+            "params": params
+        });
+
+        Self::send_message(&mut server.process, &request)?;
+        let response = Self::read_message(&mut server.process)?;
+
+        let result = response.get("result");
+        if result.is_none() || result.unwrap().is_null() {
+            return Ok(vec![]);
+        }
+
+        let edits: Vec<Value> = match result.unwrap() {
+            Value::Array(arr) => arr.clone(),
+            _ => return Ok(vec![]),
+        };
+
+        Ok(edits.iter().filter_map(|edit| {
+            let range = edit.get("range")?;
+            let new_text = edit.get("newText")?.as_str()?;
+
+            Some(TextEdit {
+                start_line: range.get("start")?.get("line")?.as_u64()? as u32,
+                start_col: range.get("start")?.get("character")?.as_u64()? as u32,
+                end_line: range.get("end")?.get("line")?.as_u64()? as u32,
+                end_col: range.get("end")?.get("character")?.as_u64()? as u32,
+                new_text: new_text.to_string(),
+            })
+        }).collect())
+    }
+
     fn stop_server(&mut self, language: &str) -> Result<(), String> {
         if let Some(mut server) = self.servers.remove(language) {
             // Send shutdown request
@@ -554,6 +779,42 @@ pub async fn lsp_warmup(workspace_root: String, languages: Vec<String>) -> Resul
     }
 
     Ok(started)
+}
+
+// Go to definition
+#[tauri::command]
+pub async fn lsp_go_to_definition(
+    language: String,
+    path: String,
+    line: u32,
+    column: u32
+) -> Result<Option<LocationResult>, String> {
+    let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    manager.go_to_definition(&language, &path, line, column)
+}
+
+// Hover information
+#[tauri::command]
+pub async fn lsp_hover(
+    language: String,
+    path: String,
+    line: u32,
+    column: u32
+) -> Result<Option<HoverResult>, String> {
+    let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    manager.hover(&language, &path, line, column)
+}
+
+// Format document
+#[tauri::command]
+pub async fn lsp_format_document(
+    language: String,
+    path: String,
+    tab_size: u32,
+    insert_spaces: bool
+) -> Result<Vec<TextEdit>, String> {
+    let mut manager = LSP_MANAGER.lock().map_err(|e| e.to_string())?;
+    manager.format_document(&language, &path, tab_size, insert_spaces)
 }
 
 // Simple built-in Emmet expansion

@@ -43,6 +43,168 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
 }
 
 // ============================================
+// FIND AND REPLACE
+// ============================================
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReplaceMatch {
+    pub line: u32,
+    pub column: u32,
+    pub length: u32,
+    pub text: String,
+    pub line_content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FindResult {
+    pub matches: Vec<ReplaceMatch>,
+    pub total_count: u32,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReplaceResult {
+    pub replaced_count: u32,
+    pub new_content: String,
+}
+
+/// Find all matches in content
+#[tauri::command]
+pub fn find_in_content(
+    content: String,
+    query: String,
+    case_sensitive: bool,
+    use_regex: bool,
+    whole_word: bool,
+) -> Result<FindResult, String> {
+    if query.is_empty() {
+        return Ok(FindResult { matches: vec![], total_count: 0 });
+    }
+
+    let mut matches = Vec::new();
+
+    let pattern = if use_regex {
+        if case_sensitive {
+            Regex::new(&query)
+        } else {
+            Regex::new(&format!("(?i){}", query))
+        }
+    } else {
+        let escaped = regex::escape(&query);
+        let pattern = if whole_word {
+            format!(r"\b{}\b", escaped)
+        } else {
+            escaped
+        };
+        if case_sensitive {
+            Regex::new(&pattern)
+        } else {
+            Regex::new(&format!("(?i){}", pattern))
+        }
+    }.map_err(|e| format!("Invalid regex: {}", e))?;
+
+    for (line_idx, line) in content.lines().enumerate() {
+        for mat in pattern.find_iter(line) {
+            matches.push(ReplaceMatch {
+                line: line_idx as u32,
+                column: mat.start() as u32,
+                length: mat.len() as u32,
+                text: mat.as_str().to_string(),
+                line_content: line.to_string(),
+            });
+        }
+    }
+
+    let total_count = matches.len() as u32;
+    Ok(FindResult { matches, total_count })
+}
+
+/// Replace all occurrences in content
+#[tauri::command]
+pub fn replace_in_content(
+    content: String,
+    query: String,
+    replacement: String,
+    case_sensitive: bool,
+    use_regex: bool,
+    whole_word: bool,
+) -> Result<ReplaceResult, String> {
+    if query.is_empty() {
+        return Ok(ReplaceResult { replaced_count: 0, new_content: content });
+    }
+
+    let pattern = if use_regex {
+        if case_sensitive {
+            Regex::new(&query)
+        } else {
+            Regex::new(&format!("(?i){}", query))
+        }
+    } else {
+        let escaped = regex::escape(&query);
+        let pattern = if whole_word {
+            format!(r"\b{}\b", escaped)
+        } else {
+            escaped
+        };
+        if case_sensitive {
+            Regex::new(&pattern)
+        } else {
+            Regex::new(&format!("(?i){}", pattern))
+        }
+    }.map_err(|e| format!("Invalid regex: {}", e))?;
+
+    let replaced_count = pattern.find_iter(&content).count() as u32;
+    let new_content = pattern.replace_all(&content, replacement.as_str()).to_string();
+
+    Ok(ReplaceResult { replaced_count, new_content })
+}
+
+/// Replace single occurrence at specific position
+#[tauri::command]
+pub fn replace_single(
+    content: String,
+    line: u32,
+    column: u32,
+    length: u32,
+    replacement: String,
+) -> Result<String, String> {
+    let lines: Vec<&str> = content.lines().collect();
+
+    if line as usize >= lines.len() {
+        return Err("Line out of range".to_string());
+    }
+
+    let mut result = String::new();
+    for (idx, line_str) in content.lines().enumerate() {
+        if idx > 0 {
+            result.push('\n');
+        }
+
+        if idx == line as usize {
+            let col = column as usize;
+            let len = length as usize;
+
+            if col > line_str.len() {
+                return Err("Column out of range".to_string());
+            }
+
+            let end = (col + len).min(line_str.len());
+            result.push_str(&line_str[..col]);
+            result.push_str(&replacement);
+            result.push_str(&line_str[end..]);
+        } else {
+            result.push_str(line_str);
+        }
+    }
+
+    // Preserve trailing newline if original had one
+    if content.ends_with('\n') {
+        result.push('\n');
+    }
+
+    Ok(result)
+}
+
+// ============================================
 // LARGE FILE HANDLING
 // ============================================
 
