@@ -1,12 +1,35 @@
-import { EditorState, type Extension } from "@codemirror/state";
+import { EditorState, type Extension, Compartment } from "@codemirror/state";
 import { EditorView, keymap, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor, rectangularSelection, crosshairCursor, highlightActiveLine } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
 import { autocompletion, completionKeymap, closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
-import { foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching, foldKeymap } from "@codemirror/language";
+import { foldGutter, indentOnInput, bracketMatching, foldKeymap } from "@codemirror/language";
 import { getLanguageExtension } from "./languages";
 import { getThemeExtension } from "./themes";
 import type { Settings } from "../stores/settings";
+
+// Compartment for dynamic font size updates
+export const fontSizeCompartment = new Compartment();
+
+export function createFontSizeExtension(fontSize: number, fontFamily: string) {
+  return EditorView.theme({
+    "&": {
+      fontSize: `${fontSize}px !important`,
+      fontFamily: fontFamily,
+    },
+    ".cm-content": {
+      fontSize: `${fontSize}px !important`,
+      fontFamily: fontFamily,
+    },
+    ".cm-gutters": {
+      fontSize: `${fontSize}px !important`,
+      fontFamily: fontFamily,
+    },
+    ".cm-line": {
+      fontSize: `${fontSize}px !important`,
+    },
+  });
+}
 
 export interface EditorSetupOptions {
   language: string;
@@ -30,7 +53,6 @@ export function createEditorState(
     dropCursor(),
     EditorState.allowMultipleSelections.of(true),
     indentOnInput(),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
     bracketMatching(),
     closeBrackets(),
     autocompletion(),
@@ -62,19 +84,10 @@ export function createEditorState(
     // Word wrap
     options.settings.wordWrap ? EditorView.lineWrapping : [],
 
-    // Font settings
-    EditorView.theme({
-      "&": {
-        fontSize: `${options.settings.fontSize}px`,
-        fontFamily: options.settings.fontFamily,
-      },
-      ".cm-content": {
-        fontFamily: options.settings.fontFamily,
-      },
-      ".cm-gutters": {
-        fontFamily: options.settings.fontFamily,
-      },
-    }),
+    // Font settings (via compartment for dynamic updates)
+    fontSizeCompartment.of(
+      createFontSizeExtension(options.settings.fontSize, options.settings.fontFamily)
+    ),
 
     // Change listener
     EditorView.updateListener.of((update) => {

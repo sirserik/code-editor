@@ -11,7 +11,7 @@
 
   let { width = $bindable(250) }: Props = $props();
 
-  let activeTab: "files" | "git" | "search" = $state("files");
+  let activeTab: "files" | "git" = $state("files");
   let isResizing = $state(false);
 
   async function handleOpenFolder() {
@@ -69,17 +69,6 @@
         <line x1="6" y1="9" x2="6" y2="21"></line>
       </svg>
     </button>
-    <button
-      class="tab"
-      class:active={activeTab === "search"}
-      onclick={() => (activeTab = "search")}
-      title="Search"
-    >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="11" cy="11" r="8"></circle>
-        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-      </svg>
-    </button>
   </div>
 
   <div class="sidebar-content">
@@ -100,13 +89,6 @@
         <span>SOURCE CONTROL</span>
       </div>
       <GitPanel />
-    {:else if activeTab === "search"}
-      <div class="panel-header">
-        <span>SEARCH</span>
-      </div>
-      <div class="search-panel">
-        <input type="text" placeholder="Search..." class="search-input" />
-      </div>
     {/if}
   </div>
 
@@ -114,6 +96,8 @@
     class="resize-handle"
     class:active={isResizing}
     onmousedown={startResize}
+    role="separator"
+    aria-orientation="vertical"
   ></div>
 </aside>
 
@@ -178,14 +162,6 @@
   .icon-btn:hover {
     color: var(--text-primary);
     background: var(--bg-hover);
-  }
-
-  .search-panel {
-    padding: 8px 12px;
-  }
-
-  .search-input {
-    width: 100%;
   }
 
   .resize-handle {

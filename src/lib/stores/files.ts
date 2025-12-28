@@ -105,37 +105,93 @@ export const fileTreeStore = createFileTreeStore();
 // Current project root
 export const projectRootStore = writable<string | null>(null);
 
+// Search results store
+export interface SearchMatch {
+  path: string;
+  line: number;
+  content: string;
+}
+
+export interface SearchResultsState {
+  query: string;
+  results: SearchMatch[];
+  isVisible: boolean;
+}
+
+function createSearchResultsStore() {
+  const { subscribe, set, update } = writable<SearchResultsState>({
+    query: "",
+    results: [],
+    isVisible: false,
+  });
+
+  return {
+    subscribe,
+    setResults: (query: string, results: SearchMatch[]) => {
+      set({ query, results, isVisible: true });
+    },
+    hide: () => {
+      update((state) => ({ ...state, isVisible: false }));
+    },
+    clear: () => {
+      set({ query: "", results: [], isVisible: false });
+    },
+  };
+}
+
+export const searchResultsStore = createSearchResultsStore();
+
+// Search highlight store - for highlighting matches in editor
+export const searchHighlightStore = writable<string>("");
+
 // Get language from file extension
 export function getLanguageFromPath(path: string): string {
   const ext = path.split(".").pop()?.toLowerCase() || "";
   const languageMap: Record<string, string> = {
     js: "javascript",
-    jsx: "javascript",
+    mjs: "javascript",
+    cjs: "javascript",
+    jsx: "jsx",
     ts: "typescript",
-    tsx: "typescript",
+    mts: "typescript",
+    cts: "typescript",
+    tsx: "tsx",
     py: "python",
     rs: "rust",
     go: "go",
     html: "html",
+    htm: "html",
     css: "css",
     scss: "css",
+    less: "css",
     json: "json",
     md: "markdown",
     sql: "sql",
     sh: "shell",
     bash: "shell",
+    zsh: "shell",
     yml: "yaml",
     yaml: "yaml",
+    env: "shell",
+    dockerfile: "shell",
     toml: "toml",
-    xml: "xml",
-    svg: "xml",
+    xml: "html",
+    svg: "html",
+    svelte: "html",
+    vue: "html",
     php: "php",
+    phtml: "php",
     rb: "ruby",
     java: "java",
     c: "c",
     cpp: "cpp",
+    cc: "cpp",
+    cxx: "cpp",
     h: "c",
     hpp: "cpp",
+    hxx: "cpp",
   };
-  return languageMap[ext] || "text";
+  const lang = languageMap[ext] || "text";
+  console.log("Language for", path, "->", lang);
+  return lang;
 }

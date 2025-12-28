@@ -1,6 +1,6 @@
 mod commands;
 
-use commands::{file, git};
+use commands::{file, git, settings};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,12 +16,23 @@ pub fn run() {
             file::create_directory,
             file::delete_file,
             file::rename_file,
+            file::file_exists,
+            file::search_in_project,
+            file::get_all_files,
             // Git commands
             git::git_status,
             git::git_diff,
             git::git_stage,
             git::git_unstage,
             git::git_commit,
+            // Settings commands
+            settings::get_settings,
+            settings::set_settings,
+            settings::set_font_size,
+            settings::zoom_in,
+            settings::zoom_out,
+            settings::reset_zoom,
+            settings::set_theme,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

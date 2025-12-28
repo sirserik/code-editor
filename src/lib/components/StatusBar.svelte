@@ -39,6 +39,28 @@
   </div>
 
   <div class="right">
+    <!-- Zoom controls -->
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick={() => settingsStore.zoomOut()} title="Zoom Out (Cmd/Ctrl -)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </svg>
+      </button>
+      <button class="zoom-value" onclick={() => settingsStore.resetZoom()} title="Reset Zoom">
+        {$settingsStore.fontSize}px
+      </button>
+      <button class="zoom-btn" onclick={() => settingsStore.zoomIn()} title="Zoom In (Cmd/Ctrl +)">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="11" cy="11" r="8"></circle>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          <line x1="11" y1="8" x2="11" y2="14"></line>
+          <line x1="8" y1="11" x2="14" y2="11"></line>
+        </svg>
+      </button>
+    </div>
+
     {#if $activeFileStore}
       <span class="status-item">
         Ln {$activeFileStore.cursorPosition.line}, Col {$activeFileStore.cursorPosition.column}
@@ -118,5 +140,45 @@
     padding: 0 4px;
     background: rgba(0, 0, 0, 0.2);
     border-radius: 2px;
+  }
+
+  .zoom-controls {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    margin-right: 8px;
+    padding: 0 4px;
+    background: rgba(0, 0, 0, 0.1);
+    border-radius: 4px;
+  }
+
+  .zoom-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    background: transparent;
+    color: inherit;
+    border-radius: 3px;
+    transition: background 0.1s;
+  }
+
+  .zoom-btn:hover {
+    background: rgba(0, 0, 0, 0.15);
+  }
+
+  .zoom-value {
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: 500;
+    background: transparent;
+    color: inherit;
+    border-radius: 3px;
+    min-width: 36px;
+    text-align: center;
+  }
+
+  .zoom-value:hover {
+    background: rgba(0, 0, 0, 0.15);
   }
 </style>

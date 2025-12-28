@@ -118,3 +118,64 @@ export async function saveFileDialog(
     defaultPath,
   });
 }
+
+// Confirmation dialogs
+export async function confirmDialog(
+  title: string,
+  message: string
+): Promise<boolean> {
+  const { confirm } = await import("@tauri-apps/plugin-dialog");
+  return confirm(message, { title, kind: "warning" });
+}
+
+export async function askDialog(
+  title: string,
+  message: string
+): Promise<boolean | null> {
+  const { ask } = await import("@tauri-apps/plugin-dialog");
+  return ask(message, { title, kind: "warning" });
+}
+
+export async function messageDialog(
+  title: string,
+  message: string,
+  kind: "info" | "warning" | "error" = "info"
+): Promise<void> {
+  const { message: showMessage } = await import("@tauri-apps/plugin-dialog");
+  await showMessage(message, { title, kind });
+}
+
+// Search in project
+export interface SearchResult {
+  path: string;
+  line: number;
+  content: string;
+  match: string;
+}
+
+export interface SearchOptions {
+  include?: string;
+  exclude?: string;
+  caseSensitive?: boolean;
+  useRegex?: boolean;
+}
+
+export async function searchInProject(
+  rootPath: string,
+  query: string,
+  options: SearchOptions = {}
+): Promise<SearchResult[]> {
+  return invoke<SearchResult[]>("search_in_project", {
+    rootPath,
+    query,
+    include: options.include || null,
+    exclude: options.exclude || "node_modules,dist,.git,target",
+    caseSensitive: options.caseSensitive || false,
+    useRegex: options.useRegex || false,
+  });
+}
+
+// Check if file exists
+export async function fileExists(path: string): Promise<boolean> {
+  return invoke<boolean>("file_exists", { path });
+}

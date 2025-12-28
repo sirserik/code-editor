@@ -1,58 +1,58 @@
 :root {
-  /* Colors - Dark theme by default */
-  --bg-primary: #1e1e2e;
-  --bg-secondary: #181825;
-  --bg-tertiary: #11111b;
-  --bg-hover: #313244;
-  --bg-active: #45475a;
+  /* Tokyo Night Storm - Dark theme by default */
+  --bg-primary: #24283b;
+  --bg-secondary: #1f2335;
+  --bg-tertiary: #1a1b26;
+  --bg-hover: #292e42;
+  --bg-active: #33467c;
 
-  --text-primary: #cdd6f4;
-  --text-secondary: #a6adc8;
-  --text-muted: #6c7086;
+  --text-primary: #c0caf5;
+  --text-secondary: #a9b1d6;
+  --text-muted: #565f89;
 
-  --accent: #89b4fa;
-  --accent-hover: #74c7ec;
-  --success: #a6e3a1;
-  --warning: #f9e2af;
-  --error: #f38ba8;
+  --accent: #7aa2f7;
+  --accent-hover: #7dcfff;
+  --success: #9ece6a;
+  --warning: #e0af68;
+  --error: #f7768e;
 
-  --border: #313244;
-  --scrollbar: #45475a;
-  --scrollbar-hover: #585b70;
+  --border: #292e42;
+  --scrollbar: #3b4261;
+  --scrollbar-hover: #565f89;
 
   /* Sizing */
   --sidebar-width: 250px;
-  --tab-height: 36px;
-  --statusbar-height: 24px;
+  --tab-height: 38px;
+  --statusbar-height: 26px;
   --terminal-height: 200px;
 
   /* Font */
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  --font-size: 14px;
-  --line-height: 1.5;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', 'Menlo', monospace;
+  --font-size: 13px;
+  --line-height: 1.6;
 }
 
-/* Light theme */
+/* Tokyo Night Day - Light theme */
 [data-theme="light"] {
-  --bg-primary: #eff1f5;
-  --bg-secondary: #e6e9ef;
-  --bg-tertiary: #dce0e8;
-  --bg-hover: #ccd0da;
-  --bg-active: #bcc0cc;
+  --bg-primary: #e1e2e7;
+  --bg-secondary: #e9e9ec;
+  --bg-tertiary: #d5d6db;
+  --bg-hover: #c4c5ca;
+  --bg-active: #b6bfe2;
 
-  --text-primary: #4c4f69;
-  --text-secondary: #5c5f77;
-  --text-muted: #9ca0b0;
+  --text-primary: #3760bf;
+  --text-secondary: #6172b0;
+  --text-muted: #848cb5;
 
-  --accent: #1e66f5;
-  --accent-hover: #2a6ef5;
-  --success: #40a02b;
-  --warning: #df8e1d;
-  --error: #d20f39;
+  --accent: #2e7de9;
+  --accent-hover: #007197;
+  --success: #587539;
+  --warning: #8c6c3e;
+  --error: #f52a65;
 
-  --border: #ccd0da;
-  --scrollbar: #bcc0cc;
-  --scrollbar-hover: #9ca0b0;
+  --border: #c4c5ca;
+  --scrollbar: #9699a3;
+  --scrollbar-hover: #6172b0;
 }
 
 * {
