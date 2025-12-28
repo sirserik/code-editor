@@ -4,8 +4,16 @@
   import type { FileEntry } from "$lib/stores/files";
   import ContextMenu from "./ContextMenu.svelte";
   import FileIcon from "./FileIcon.svelte";
+  import NewFileDialog from "./NewFileDialog.svelte";
+  import NewFolderDialog from "./NewFolderDialog.svelte";
+  import RenameDialog from "./RenameDialog.svelte";
 
   let contextMenu = $state<{ x: number; y: number; entry: FileEntry } | null>(null);
+  let showNewFileDialog = $state(false);
+  let showNewFolderDialog = $state(false);
+  let showRenameDialog = $state(false);
+  let newItemPath = $state("");
+  let renameEntry = $state<FileEntry | null>(null);
 
   async function handleFileClick(entry: FileEntry) {
     if (entry.isDirectory) {
@@ -44,48 +52,62 @@
     contextMenu = { x: e.clientX, y: e.clientY, entry };
   }
 
-  async function handleNewFile(parentPath: string) {
-    const name = prompt("Enter file name:");
-    if (!name) return;
+  function handleNewFile(parentPath: string) {
+    newItemPath = parentPath;
+    showNewFileDialog = true;
+    contextMenu = null;
+  }
 
-    const newPath = `${parentPath}/${name}`;
-    try {
-      await createFile(newPath);
-      await refreshDirectory(parentPath);
-    } catch (err) {
-      console.error("Failed to create file:", err);
-      messageDialog("Error", "Failed to create file: " + err, "error");
+  function handleNewFolder(parentPath: string) {
+    newItemPath = parentPath;
+    showNewFolderDialog = true;
+    contextMenu = null;
+  }
+
+  async function handleNewFileClose() {
+    showNewFileDialog = false;
+    if (newItemPath) {
+      await refreshDirectory(newItemPath);
     }
   }
 
-  async function handleNewFolder(parentPath: string) {
-    const name = prompt("Enter folder name:");
+  async function handleNewFolderCreate(name: string) {
     if (!name) return;
 
-    const newPath = `${parentPath}/${name}`;
+    const newPath = `${newItemPath}/${name}`;
     try {
       await createDirectory(newPath);
-      await refreshDirectory(parentPath);
+      await refreshDirectory(newItemPath);
+      showNewFolderDialog = false;
     } catch (err) {
       console.error("Failed to create folder:", err);
       messageDialog("Error", "Failed to create folder: " + err, "error");
     }
   }
 
-  async function handleRename(entry: FileEntry) {
-    const newName = prompt("Enter new name:", entry.name);
-    if (!newName || newName === entry.name) return;
+  function handleRename(entry: FileEntry) {
+    renameEntry = entry;
+    showRenameDialog = true;
+    contextMenu = null;
+  }
 
-    const parentPath = entry.path.substring(0, entry.path.lastIndexOf("/"));
+  async function handleRenameSubmit(newName: string) {
+    if (!renameEntry || !newName || newName === renameEntry.name) {
+      showRenameDialog = false;
+      return;
+    }
+
+    const parentPath = renameEntry.path.substring(0, renameEntry.path.lastIndexOf("/"));
     const newPath = `${parentPath}/${newName}`;
 
     try {
-      await renameFile(entry.path, newPath);
+      await renameFile(renameEntry.path, newPath);
       // Update open file if it was renamed
-      if (!entry.isDirectory && $activeFilePathStore === entry.path) {
+      if (!renameEntry.isDirectory && $activeFilePathStore === renameEntry.path) {
         activeFilePathStore.set(newPath);
       }
       await refreshDirectory(parentPath);
+      showRenameDialog = false;
     } catch (err) {
       console.error("Failed to rename:", err);
       messageDialog("Error", "Failed to rename: " + err, "error");
@@ -240,6 +262,27 @@
     y={contextMenu.y}
     items={getContextMenuItems(contextMenu.entry)}
     onClose={() => contextMenu = null}
+  />
+{/if}
+
+{#if showNewFileDialog}
+  <NewFileDialog currentPath={newItemPath} onClose={handleNewFileClose} />
+{/if}
+
+{#if showNewFolderDialog}
+  <NewFolderDialog
+    currentPath={newItemPath}
+    onClose={() => showNewFolderDialog = false}
+    onCreate={handleNewFolderCreate}
+  />
+{/if}
+
+{#if showRenameDialog && renameEntry}
+  <RenameDialog
+    currentName={renameEntry.name}
+    isDirectory={renameEntry.isDirectory}
+    onClose={() => showRenameDialog = false}
+    onRename={handleRenameSubmit}
   />
 {/if}
 
