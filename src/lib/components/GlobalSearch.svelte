@@ -84,14 +84,12 @@
     isSearching = true;
     errorMessage = "";
     try {
-      console.log("Searching for:", query, "in", $projectRootStore);
       results = await searchInProject($projectRootStore, query, {
         include: includePattern || undefined,
         exclude: excludePattern || undefined,
         caseSensitive,
         useRegex: false,
       });
-      console.log("Search results:", results.length);
     } catch (err) {
       console.error("Search failed:", err);
       errorMessage = "Search failed: " + err;

@@ -42,6 +42,13 @@ function createFilesStore() {
         )
       );
     },
+    markDirty: (path: string) => {
+      update((files) =>
+        files.map((f) =>
+          f.path === path && !f.isDirty ? { ...f, isDirty: true } : f
+        )
+      );
+    },
     markSaved: (path: string) => {
       update((files) =>
         files.map((f) => (f.path === path ? { ...f, isDirty: false } : f))

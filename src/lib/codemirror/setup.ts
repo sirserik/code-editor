@@ -8,6 +8,15 @@ import { getLanguageExtension } from "./languages";
 import { getThemeExtension } from "./themes";
 import type { Settings } from "../stores/settings";
 
+// Debounce utility
+function debounce<T extends (...args: any[]) => void>(fn: T, delay: number): T {
+  let timeoutId: ReturnType<typeof setTimeout> | null = null;
+  return ((...args: any[]) => {
+    if (timeoutId) clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => fn(...args), delay);
+  }) as T;
+}
+
 // Custom command: Jump to matching bracket
 function goToMatchingBracket(view: EditorView): boolean {
   const pos = view.state.selection.main.head;
@@ -93,12 +102,21 @@ export interface EditorSetupOptions {
   settings: Settings;
   onChange?: (content: string) => void;
   onCursorChange?: (line: number, column: number) => void;
+  onDirty?: () => void;  // Called immediately when content changes (for dirty flag)
 }
 
 export function createEditorState(
   content: string,
   options: EditorSetupOptions
 ): EditorState {
+  // Create debounced handlers - sync content every 300ms, cursor every 100ms
+  const debouncedOnChange = options.onChange
+    ? debounce(options.onChange, 300)
+    : () => {};
+  const debouncedCursorChange = options.onCursorChange
+    ? debounce(options.onCursorChange, 100)
+    : () => {};
+
   const extensions: Extension[] = [
     // Basic setup
     lineNumbers(),
@@ -153,15 +171,21 @@ export function createEditorState(
       createFontSizeExtension(options.settings.fontSize, options.settings.fontFamily)
     ),
 
-    // Change listener
+    // Change listener with debounced content sync
     EditorView.updateListener.of((update) => {
-      if (update.docChanged && options.onChange) {
-        options.onChange(update.state.doc.toString());
+      if (update.docChanged) {
+        // Mark dirty immediately (cheap operation)
+        options.onDirty?.();
+        // Debounce actual content sync (expensive operation)
+        if (options.onChange) {
+          debouncedOnChange(update.state.doc.toString());
+        }
       }
+      // Debounce cursor position updates too
       if (update.selectionSet && options.onCursorChange) {
         const pos = update.state.selection.main.head;
         const line = update.state.doc.lineAt(pos);
-        options.onCursorChange(line.number, pos - line.from + 1);
+        debouncedCursorChange(line.number, pos - line.from + 1);
       }
     }),
   ];

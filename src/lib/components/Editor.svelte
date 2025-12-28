@@ -68,13 +68,15 @@
     filesStore.updateCursor(file.path, line, column);
   }
 
+  function handleDirty() {
+    filesStore.markDirty(file.path);
+  }
+
   async function handleSave() {
     try {
-      console.log("Saving file:", file.path);
       const contentToSave = view?.state.doc.toString() || file.content;
       await writeFile(file.path, contentToSave);
       filesStore.markSaved(file.path);
-      console.log("File saved successfully!");
       if (editorContainer) {
         editorContainer.style.outline = "2px solid var(--success)";
         setTimeout(() => {
@@ -101,13 +103,12 @@
   }
 
   onMount(() => {
-    console.log("Editor mounting for file:", file.path, "language:", file.language);
-
     const state = createEditorState(file.content, {
       language: file.language,
       settings: $settingsStore,
       onChange: handleChange,
       onCursorChange: handleCursorChange,
+      onDirty: handleDirty,
     });
 
     // Add highlight field extension
